@@ -26,9 +26,9 @@
 - [x] Task: Phase Verification & Checkpoint (Refer to workflow.md) (a1243d5)
 
 ## Phase 3: StreamingPull vs Synchronous Pull Benchmark (TDD)
-- [ ] Task: Synchronous Pull Worker (Legacy Baseline)
-  - [ ] Write tests for synchronous pull worker with long-polling timeout simulation
-  - [ ] Implement `SyncPullWorker` in `src/workers/sync_worker.py` (measuring idle wait overhead)
+- [x] Task: Synchronous Pull Worker (Legacy Baseline) (924b562)
+  - [x] Write tests for synchronous pull worker with long-polling timeout simulation
+  - [x] Implement `SyncPullWorker` in `src/workers/sync_worker.py` (measuring idle wait overhead)
 - [ ] Task: gRPC StreamingPull Worker (Optimized Pipeline)
   - [ ] Write tests for StreamingPull worker with asynchronous message handling
   - [ ] Implement `StreamingPullWorker` in `src/workers/streaming_worker.py` (persistent bidirectional gRPC)
