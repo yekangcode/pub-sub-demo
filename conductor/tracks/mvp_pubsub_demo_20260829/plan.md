@@ -51,10 +51,10 @@
 ## Phase 5: Streamlit Interactive Web Dashboard & Demo Runner
 - [x] Task: Synthetic Workload Generator (4d89f79)
   - [x] Implement configurable traffic generator (rate, size distribution, error toggle) in `src/generator.py`
-- [ ] Task: Streamlit Dashboard UI
-  - [ ] Build interactive controls (Rate slider, Large Payload %, Error Injection button)
-  - [ ] Build live metrics visualization (Dual-path counters, Sync vs StreamingPull latency bar charts)
-  - [ ] Build BigQuery streaming data viewer and DLQ monitoring panel
+- [x] Task: Streamlit Dashboard UI (0180c3c)
+  - [x] Build interactive controls (Rate slider, Large Payload %, Error Injection button)
+  - [x] Build live metrics visualization (Dual-path counters, Sync vs StreamingPull latency bar charts)
+  - [x] Build BigQuery streaming data viewer and DLQ monitoring panel
 - [ ] Task: End-to-End Demo Script & Documentation
   - [ ] Create `run_demo.sh` for one-click startup (offline mock or live GCP)
   - [ ] Update `README.md` with demo presentation guide, architecture diagrams, and talking points
