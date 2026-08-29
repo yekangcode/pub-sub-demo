@@ -1,9 +1,9 @@
 # Implementation Plan: MVP Google Cloud Pub/Sub Enterprise Architecture Demo
 
 ## Phase 1: Core Foundation & Proto-First Schemas (TDD)
-- [ ] Task: Project Setup & Dependencies
-  - [ ] Define `pyproject.toml` and `requirements.txt`
-  - [ ] Initialize project directory layout (`src/`, `tests/`, `proto/`, `scripts/`)
+- [x] Task: Project Setup & Dependencies (1cad93f)
+  - [x] Define `pyproject.toml` and `requirements.txt`
+  - [x] Initialize project directory layout (`src/`, `tests/`, `proto/`, `scripts/`)
 - [ ] Task: Proto-First Schema & Code Generation
   - [ ] Write `proto/streaming_event.proto` defining `StreamingEvent`
   - [ ] Write unit tests for proto serialization/deserialization
