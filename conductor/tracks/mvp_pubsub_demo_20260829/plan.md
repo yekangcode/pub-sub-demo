@@ -4,10 +4,10 @@
 - [x] Task: Project Setup & Dependencies (1cad93f)
   - [x] Define `pyproject.toml` and `requirements.txt`
   - [x] Initialize project directory layout (`src/`, `tests/`, `proto/`, `scripts/`)
-- [ ] Task: Proto-First Schema & Code Generation
-  - [ ] Write `proto/streaming_event.proto` defining `StreamingEvent`
-  - [ ] Write unit tests for proto serialization/deserialization
-  - [ ] Implement proto compilation script
+- [x] Task: Proto-First Schema & Code Generation (7642624)
+  - [x] Write `proto/streaming_event.proto` defining `StreamingEvent`
+  - [x] Write unit tests for proto serialization/deserialization
+  - [x] Implement proto compilation script
 - [ ] Task: Zstandard Compression & Decompression Layer
   - [ ] Write unit tests for zstd compression ratio and transparency (`tests/test_compression.py`)
   - [ ] Implement `CompressionManager` in `src/compression.py`
