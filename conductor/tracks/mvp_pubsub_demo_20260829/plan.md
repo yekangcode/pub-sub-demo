@@ -20,9 +20,9 @@
 - [x] Task: Dual-Path Publisher (Fast Path vs GCS Offload) (e070731)
   - [x] Write tests for payload routing (< 8MB vs >= 8MB) (`tests/test_publisher.py`)
   - [x] Implement `DualPathPublisher` in `src/publisher.py`
-- [ ] Task: Dual-Path Ingestion Consumer
-  - [ ] Write tests for consumer payload reconstitution (`tests/test_consumer.py`)
-  - [ ] Implement `DualPathConsumer` in `src/consumer.py` (inline decompress vs GCS blob fetch)
+- [x] Task: Dual-Path Ingestion Consumer (665ff75)
+  - [x] Write tests for consumer payload reconstitution (`tests/test_consumer.py`)
+  - [x] Implement `DualPathConsumer` in `src/consumer.py` (inline decompress vs GCS blob fetch)
 - [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
 
 ## Phase 3: StreamingPull vs Synchronous Pull Benchmark (TDD)
