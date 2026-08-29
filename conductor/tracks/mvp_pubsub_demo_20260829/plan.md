@@ -29,9 +29,9 @@
 - [x] Task: Synchronous Pull Worker (Legacy Baseline) (924b562)
   - [x] Write tests for synchronous pull worker with long-polling timeout simulation
   - [x] Implement `SyncPullWorker` in `src/workers/sync_worker.py` (measuring idle wait overhead)
-- [ ] Task: gRPC StreamingPull Worker (Optimized Pipeline)
-  - [ ] Write tests for StreamingPull worker with asynchronous message handling
-  - [ ] Implement `StreamingPullWorker` in `src/workers/streaming_worker.py` (persistent bidirectional gRPC)
+- [x] Task: gRPC StreamingPull Worker (Optimized Pipeline) (ba13a40)
+  - [x] Write tests for StreamingPull worker with asynchronous message handling
+  - [x] Implement `StreamingPullWorker` in `src/workers/streaming_worker.py` (persistent bidirectional gRPC)
 - [ ] Task: Benchmark & Metrics Collector
   - [ ] Write tests for metrics aggregation (P50/P95/P99 latency, CPU utilization ratio)
   - [ ] Implement `MetricsCollector` in `src/metrics.py`
