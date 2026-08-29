@@ -55,7 +55,7 @@
   - [x] Build interactive controls (Rate slider, Large Payload %, Error Injection button)
   - [x] Build live metrics visualization (Dual-path counters, Sync vs StreamingPull latency bar charts)
   - [x] Build BigQuery streaming data viewer and DLQ monitoring panel
-- [ ] Task: End-to-End Demo Script & Documentation
-  - [ ] Create `run_demo.sh` for one-click startup (offline mock or live GCP)
-  - [ ] Update `README.md` with demo presentation guide, architecture diagrams, and talking points
+- [x] Task: End-to-End Demo Script & Documentation (6e2f632)
+  - [x] Create `run_demo.sh` for one-click startup (offline mock or live GCP)
+  - [x] Update `README.md` with demo presentation guide, architecture diagrams, and talking points
 - [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
