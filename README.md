@@ -9,6 +9,11 @@ Interactive customer demonstration showcasing how **Anthropic** built their mass
 
 ---
 
+## 📚 Reference Architecture Document
+- **Official Presentation Slide Deck (PDF)**: [How Anthropic Built on Google Cloud Pub/Sub (PDF)](https://content-cdn.sessionboard.com/content/IdZQpQJIQVmsSBjedvUW_BRK1-041.pdf)
+
+---
+
 ## 🎯 Architecture Pillars Covered in Demo
 
 ```mermaid
