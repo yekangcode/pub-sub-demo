@@ -38,14 +38,14 @@
 - [x] Task: Phase Verification & Checkpoint (Refer to workflow.md) (71e1636)
 
 ## Phase 4: GCP Infrastructure Automation & BigQuery Zero-ETL
-- [ ] Task: Infrastructure Provisioning Script (`scripts/setup_infra.py`)
-  - [ ] Write script to provision Pub/Sub topics, subscriptions, DLQ, GCS bucket, BigQuery dataset/table
-  - [ ] Configure Pub/Sub Push subscription to BigQuery Zero-ETL
-- [ ] Task: Infrastructure Teardown Script (`scripts/cleanup_infra.py`)
-  - [ ] Write safe cleanup script to delete created GCP demo resources on demand
-- [ ] Task: Dead Letter Queue (DLQ) & Error Injection Flow
-  - [ ] Write integration test for corrupt payload injection and 5-retry DLQ routing
-  - [ ] Implement DLQ handler and verifier in `src/dlq.py`
+- [x] Task: Infrastructure Provisioning Script (`scripts/setup_infra.py`)
+  - [x] Write script to provision Pub/Sub topics, subscriptions, DLQ, GCS bucket, BigQuery dataset/table
+  - [x] Configure Pub/Sub Push subscription to BigQuery Zero-ETL
+- [x] Task: Infrastructure Teardown Script (`scripts/cleanup_infra.py`)
+  - [x] Write safe cleanup script to delete created GCP demo resources on demand
+- [x] Task: Dead Letter Queue (DLQ) & Error Injection Flow (ae162c3)
+  - [x] Write integration test for corrupt payload injection and 5-retry DLQ routing
+  - [x] Implement DLQ handler and verifier in `src/dlq.py`
 - [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
 
 ## Phase 5: Streamlit Interactive Web Dashboard & Demo Runner
