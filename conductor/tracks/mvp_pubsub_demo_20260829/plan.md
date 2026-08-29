@@ -14,9 +14,9 @@
 - [x] Task: Phase Verification & Checkpoint (Refer to workflow.md) (37f3351)
 
 ## Phase 2: Dual-Path Ingestion Engine (TDD)
-- [ ] Task: Mock & Local Abstraction Layer
-  - [ ] Write tests for Pub/Sub & Storage mock interfaces
-  - [ ] Implement mock GCP client wrapper (`src/gcp_client.py`) supporting real GCP (`pub-sub-kamo`) and offline local mode
+- [x] Task: Mock & Local Abstraction Layer (aa3f082)
+  - [x] Write tests for Pub/Sub & Storage mock interfaces
+  - [x] Implement mock GCP client wrapper (`src/gcp_client.py`) supporting real GCP (`pub-sub-kamo`) and offline local mode
 - [ ] Task: Dual-Path Publisher (Fast Path vs GCS Offload)
   - [ ] Write tests for payload routing (< 8MB vs >= 8MB) (`tests/test_publisher.py`)
   - [ ] Implement `DualPathPublisher` in `src/publisher.py`
