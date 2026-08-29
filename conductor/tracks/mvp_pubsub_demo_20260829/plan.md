@@ -8,9 +8,9 @@
   - [x] Write `proto/streaming_event.proto` defining `StreamingEvent`
   - [x] Write unit tests for proto serialization/deserialization
   - [x] Implement proto compilation script
-- [ ] Task: Zstandard Compression & Decompression Layer
-  - [ ] Write unit tests for zstd compression ratio and transparency (`tests/test_compression.py`)
-  - [ ] Implement `CompressionManager` in `src/compression.py`
+- [x] Task: Zstandard Compression & Decompression Layer (e0ca68c)
+  - [x] Write unit tests for zstd compression ratio and transparency (`tests/test_compression.py`)
+  - [x] Implement `CompressionManager` in `src/compression.py`
 - [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
 
 ## Phase 2: Dual-Path Ingestion Engine (TDD)
