@@ -58,4 +58,4 @@
 - [x] Task: End-to-End Demo Script & Documentation (6e2f632)
   - [x] Create `run_demo.sh` for one-click startup (offline mock or live GCP)
   - [x] Update `README.md` with demo presentation guide, architecture diagrams, and talking points
-- [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
+- [x] Task: Phase Verification & Checkpoint (Refer to workflow.md) (19297a3)
