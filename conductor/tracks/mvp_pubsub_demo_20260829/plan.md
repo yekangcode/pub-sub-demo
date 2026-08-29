@@ -49,8 +49,8 @@
 - [x] Task: Phase Verification & Checkpoint (Refer to workflow.md) (d6b7e63)
 
 ## Phase 5: Streamlit Interactive Web Dashboard & Demo Runner
-- [ ] Task: Synthetic Workload Generator
-  - [ ] Implement configurable traffic generator (rate, size distribution, error toggle) in `src/generator.py`
+- [x] Task: Synthetic Workload Generator (4d89f79)
+  - [x] Implement configurable traffic generator (rate, size distribution, error toggle) in `src/generator.py`
 - [ ] Task: Streamlit Dashboard UI
   - [ ] Build interactive controls (Rate slider, Large Payload %, Error Injection button)
   - [ ] Build live metrics visualization (Dual-path counters, Sync vs StreamingPull latency bar charts)
