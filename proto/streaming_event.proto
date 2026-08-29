@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package pubsub_demo.v1;
+
+message StreamingEvent {
+  string event_id = 1;
+  string source = 2;
+  bytes payload = 3;
+  string payload_type = 4;
+  int64 timestamp_ms = 5;
+  map<string, string> pod_env_vars = 6;
+  bool is_corrupted = 7;
+  string schema_fingerprint = 8;
+  string payload_uri = 9;
+  int64 uncompressed_bytes = 10;
+  int64 compressed_bytes = 11;
+}
