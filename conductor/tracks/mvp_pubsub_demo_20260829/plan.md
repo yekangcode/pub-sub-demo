@@ -1,0 +1,61 @@
+# Implementation Plan: MVP Google Cloud Pub/Sub Enterprise Architecture Demo
+
+## Phase 1: Core Foundation & Proto-First Schemas (TDD)
+- [ ] Task: Project Setup & Dependencies
+  - [ ] Define `pyproject.toml` and `requirements.txt`
+  - [ ] Initialize project directory layout (`src/`, `tests/`, `proto/`, `scripts/`)
+- [ ] Task: Proto-First Schema & Code Generation
+  - [ ] Write `proto/streaming_event.proto` defining `StreamingEvent`
+  - [ ] Write unit tests for proto serialization/deserialization
+  - [ ] Implement proto compilation script
+- [ ] Task: Zstandard Compression & Decompression Layer
+  - [ ] Write unit tests for zstd compression ratio and transparency (`tests/test_compression.py`)
+  - [ ] Implement `CompressionManager` in `src/compression.py`
+- [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
+
+## Phase 2: Dual-Path Ingestion Engine (TDD)
+- [ ] Task: Mock & Local Abstraction Layer
+  - [ ] Write tests for Pub/Sub & Storage mock interfaces
+  - [ ] Implement mock GCP client wrapper (`src/gcp_client.py`) supporting real GCP (`pub-sub-kamo`) and offline local mode
+- [ ] Task: Dual-Path Publisher (Fast Path vs GCS Offload)
+  - [ ] Write tests for payload routing (< 8MB vs >= 8MB) (`tests/test_publisher.py`)
+  - [ ] Implement `DualPathPublisher` in `src/publisher.py`
+- [ ] Task: Dual-Path Ingestion Consumer
+  - [ ] Write tests for consumer payload reconstitution (`tests/test_consumer.py`)
+  - [ ] Implement `DualPathConsumer` in `src/consumer.py` (inline decompress vs GCS blob fetch)
+- [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
+
+## Phase 3: StreamingPull vs Synchronous Pull Benchmark (TDD)
+- [ ] Task: Synchronous Pull Worker (Legacy Baseline)
+  - [ ] Write tests for synchronous pull worker with long-polling timeout simulation
+  - [ ] Implement `SyncPullWorker` in `src/workers/sync_worker.py` (measuring idle wait overhead)
+- [ ] Task: gRPC StreamingPull Worker (Optimized Pipeline)
+  - [ ] Write tests for StreamingPull worker with asynchronous message handling
+  - [ ] Implement `StreamingPullWorker` in `src/workers/streaming_worker.py` (persistent bidirectional gRPC)
+- [ ] Task: Benchmark & Metrics Collector
+  - [ ] Write tests for metrics aggregation (P50/P95/P99 latency, CPU utilization ratio)
+  - [ ] Implement `MetricsCollector` in `src/metrics.py`
+- [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
+
+## Phase 4: GCP Infrastructure Automation & BigQuery Zero-ETL
+- [ ] Task: Infrastructure Provisioning Script (`scripts/setup_infra.py`)
+  - [ ] Write script to provision Pub/Sub topics, subscriptions, DLQ, GCS bucket, BigQuery dataset/table
+  - [ ] Configure Pub/Sub Push subscription to BigQuery Zero-ETL
+- [ ] Task: Infrastructure Teardown Script (`scripts/cleanup_infra.py`)
+  - [ ] Write safe cleanup script to delete created GCP demo resources on demand
+- [ ] Task: Dead Letter Queue (DLQ) & Error Injection Flow
+  - [ ] Write integration test for corrupt payload injection and 5-retry DLQ routing
+  - [ ] Implement DLQ handler and verifier in `src/dlq.py`
+- [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
+
+## Phase 5: Streamlit Interactive Web Dashboard & Demo Runner
+- [ ] Task: Synthetic Workload Generator
+  - [ ] Implement configurable traffic generator (rate, size distribution, error toggle) in `src/generator.py`
+- [ ] Task: Streamlit Dashboard UI
+  - [ ] Build interactive controls (Rate slider, Large Payload %, Error Injection button)
+  - [ ] Build live metrics visualization (Dual-path counters, Sync vs StreamingPull latency bar charts)
+  - [ ] Build BigQuery streaming data viewer and DLQ monitoring panel
+- [ ] Task: End-to-End Demo Script & Documentation
+  - [ ] Create `run_demo.sh` for one-click startup (offline mock or live GCP)
+  - [ ] Update `README.md` with demo presentation guide, architecture diagrams, and talking points
+- [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)

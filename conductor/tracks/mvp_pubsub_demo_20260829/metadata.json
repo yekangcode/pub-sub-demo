@@ -1,0 +1,8 @@
+{
+  "track_id": "mvp_pubsub_demo_20260829",
+  "type": "mvp",
+  "status": "new",
+  "created_at": "2026-08-29T12:40:00Z",
+  "updated_at": "2026-08-29T12:40:00Z",
+  "description": "MVP Google Cloud Pub/Sub Enterprise Architecture Demo (Dual-Path, StreamingPull, Proto-First, Streamlit Dashboard)"
+}
