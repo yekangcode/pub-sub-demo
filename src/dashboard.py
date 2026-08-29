@@ -1,5 +1,13 @@
 """Streamlit Interactive Web Dashboard for Google Cloud Pub/Sub Anthropic Architecture Demo."""
 
+import sys
+from pathlib import Path
+
+# Ensure repository root is in sys.path when executed via `streamlit run src/dashboard.py`
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 import time
 
 import pandas as pd

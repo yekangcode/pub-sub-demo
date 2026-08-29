@@ -24,4 +24,5 @@ python3 scripts/compile_proto.py
 
 echo "Launching Streamlit Web Dashboard..."
 echo "Open your browser at: http://localhost:8501"
+export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}"
 exec streamlit run src/dashboard.py --server.port=8501 --server.address=0.0.0.0
