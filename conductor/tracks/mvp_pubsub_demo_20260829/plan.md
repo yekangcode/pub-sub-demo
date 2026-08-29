@@ -46,7 +46,7 @@
 - [x] Task: Dead Letter Queue (DLQ) & Error Injection Flow (ae162c3)
   - [x] Write integration test for corrupt payload injection and 5-retry DLQ routing
   - [x] Implement DLQ handler and verifier in `src/dlq.py`
-- [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
+- [x] Task: Phase Verification & Checkpoint (Refer to workflow.md) (d6b7e63)
 
 ## Phase 5: Streamlit Interactive Web Dashboard & Demo Runner
 - [ ] Task: Synthetic Workload Generator
