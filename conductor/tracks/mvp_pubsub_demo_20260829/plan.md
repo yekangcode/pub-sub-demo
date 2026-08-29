@@ -11,7 +11,7 @@
 - [x] Task: Zstandard Compression & Decompression Layer (e0ca68c)
   - [x] Write unit tests for zstd compression ratio and transparency (`tests/test_compression.py`)
   - [x] Implement `CompressionManager` in `src/compression.py`
-- [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
+- [x] Task: Phase Verification & Checkpoint (Refer to workflow.md) (37f3351)
 
 ## Phase 2: Dual-Path Ingestion Engine (TDD)
 - [ ] Task: Mock & Local Abstraction Layer
