@@ -17,9 +17,9 @@
 - [x] Task: Mock & Local Abstraction Layer (aa3f082)
   - [x] Write tests for Pub/Sub & Storage mock interfaces
   - [x] Implement mock GCP client wrapper (`src/gcp_client.py`) supporting real GCP (`pub-sub-kamo`) and offline local mode
-- [ ] Task: Dual-Path Publisher (Fast Path vs GCS Offload)
-  - [ ] Write tests for payload routing (< 8MB vs >= 8MB) (`tests/test_publisher.py`)
-  - [ ] Implement `DualPathPublisher` in `src/publisher.py`
+- [x] Task: Dual-Path Publisher (Fast Path vs GCS Offload) (e070731)
+  - [x] Write tests for payload routing (< 8MB vs >= 8MB) (`tests/test_publisher.py`)
+  - [x] Implement `DualPathPublisher` in `src/publisher.py`
 - [ ] Task: Dual-Path Ingestion Consumer
   - [ ] Write tests for consumer payload reconstitution (`tests/test_consumer.py`)
   - [ ] Implement `DualPathConsumer` in `src/consumer.py` (inline decompress vs GCS blob fetch)
