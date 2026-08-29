@@ -35,7 +35,7 @@
 - [x] Task: Benchmark & Metrics Collector (a7fefdc)
   - [x] Write tests for metrics aggregation (P50/P95/P99 latency, CPU utilization ratio)
   - [x] Implement `MetricsCollector` in `src/metrics.py`
-- [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
+- [x] Task: Phase Verification & Checkpoint (Refer to workflow.md) (71e1636)
 
 ## Phase 4: GCP Infrastructure Automation & BigQuery Zero-ETL
 - [ ] Task: Infrastructure Provisioning Script (`scripts/setup_infra.py`)
