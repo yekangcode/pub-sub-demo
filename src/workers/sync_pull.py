@@ -69,7 +69,7 @@ class SyncPullWorker:
             self.client.topics[self.topic_id] = messages[batch_limit:]
 
             elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-            per_msg_latency = elapsed_ms / max(1, len(to_process))
+            per_msg_latency = elapsed_ms
 
             for msg in to_process:
                 results.append(

@@ -139,6 +139,13 @@ def setup_infrastructure(project_id: str, region: str = "us-central1", dry_run: 
         print(f"✕ BigQuery subscription notice (requires Pub/Sub SA permissions): {e}")
 
     print("\n=== Infrastructure Provisioning Completed Successfully ===")
+    print("\n--- 🎯 Quick Commands to Verify Deployment ---")
+    print(f"1. Automated End-to-End Test: .venv/bin/python3 scripts/verify_gcp_live.py --project_id {project_id}")
+    print("2. Pub/Sub Topics:            gcloud pubsub topics list --filter='name:pubsub-demo'")
+    print("3. Pub/Sub Subscriptions:       gcloud pubsub subscriptions list --filter='name:pubsub-demo'")
+    print(f"4. Cloud Storage Bucket:        gcloud storage ls gs://{bucket_name}")
+    print(f"5. BigQuery Streaming Events:   bq query --use_legacy_sql=false 'SELECT count(*) FROM {dataset_id}.streaming_events'")
+    print("--------------------------------------------------\n")
     return True
 
 

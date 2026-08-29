@@ -174,12 +174,13 @@ st.markdown(
 )
 
 # Tabs
-tab1, tab2, tab3, tab4 = st.tabs(
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
     [
         tr("🏛️ 아키텍처 개요", "🏛️ Architecture Overview"),
         tr("📦 1. 이중 경로 수집 & 압축", "📦 1. Dual-Path Ingestion & Compression"),
         tr("🚀 2. StreamingPull 지연 시간 절감 (88%)", "🚀 2. StreamingPull vs Sync Pull (88% Latency Drop)"),
         tr("🛡️ 3. Proto-First & Dead Letter Queue (DLQ)", "🛡️ 3. Proto-First & Dead Letter Queue (DLQ)"),
+        tr("🔍 4. 실제 GCP 프로젝트 라이브 검증", "🔍 4. Live GCP Project Verification"),
     ]
 )
 
@@ -436,6 +437,76 @@ with tab4:
             st.dataframe(df_dlq, use_container_width=True)
         else:
             st.info(tr("DLQ에 격리된 메시지가 없습니다. 모든 수집 이벤트가 정상 처리 중입니다.", "No messages in DLQ. All ingested messages healthy."))
+
+# ----------------- TAB 5: LIVE GCP VERIFICATION -----------------
+with tab5:
+    st.subheader(tr("실제 Google Cloud 프로젝트 검증 (pub-sub-kamo)", "Live Google Cloud Project Verification (pub-sub-kamo)"))
+    st.markdown(
+        f"**{tr('대상 프로젝트', 'Target Project')}**: `{project_id}` | "
+        f"**{tr('현재 모드', 'Active Mode')}**: `{gcp_mode.value.upper()}`"
+    )
+
+    v_col1, v_col2 = st.columns(2)
+    with v_col1:
+        st.markdown(f"#### 1. {tr('사전 점검 & IAM 서비스 계정 권한', 'Pre-flight & IAM Service Account')}")
+        st.info(
+            """
+        **Pub/Sub Service Agent**: `service-PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com`
+        - **DLQ Topic**: `roles/pubsub.publisher`
+        - **Main Subscription**: `roles/pubsub.subscriber`
+        - **BigQuery Dataset**: `roles/bigquery.dataEditor`
+        """
+        )
+        if st.button(tr("⚡ 1-Click 엔드투엔드 전체 아키텍처 자동 검증", "⚡ Run 1-Click End-to-End Live Verification"), use_container_width=True):
+            with st.spinner(tr("5대 아키텍처 항목을 순차 검증 중...", "Verifying 5 architecture components...")):
+                from scripts.verify_gcp_live import verify_live_deployment
+
+                is_dry = gcp_mode == GCPMode.MOCK
+                res = verify_live_deployment(project_id=project_id, dry_run=is_dry)
+                if res:
+                    st.success(
+                        tr(
+                            "🎉 5대 핵심 아키텍처 항목 검증이 모두 성공적으로 완료되었습니다!",
+                            "🎉 All 5 core architecture verification checks passed successfully!",
+                        )
+                    )
+
+    with v_col2:
+        st.markdown(f"#### 2. {tr('BigQuery Zero-ETL 스트리밍 실시간 조회', 'BigQuery Zero-ETL Live Ingestion Query')}")
+        st.write(
+            tr(
+                "Pub/Sub이 Dataflow 없이 BigQuery 테이블로 직접 적재한 데이터를 확인합니다.",
+                "Inspect events streamed directly into BigQuery without Dataflow.",
+            )
+        )
+        if st.button(tr("🔍 BigQuery 테이블 쿼리 (최근 10건)", "🔍 Query BigQuery Table (Latest 10)"), use_container_width=True):
+            if gcp_mode == GCPMode.LIVE:
+                try:
+                    from google.cloud import bigquery
+
+                    bq = bigquery.Client(project=project_id)
+                    df_bq = bq.query(
+                        f"SELECT subscription_name, message_id, publish_time, attributes "
+                        f"FROM `{project_id}.pubsub_demo_analytics.streaming_events` "
+                        f"ORDER BY publish_time DESC LIMIT 10"
+                    ).to_dataframe()
+                    st.dataframe(df_bq, use_container_width=True)
+                except Exception as e:  # noqa: BLE001
+                    st.error(f"BigQuery Query Error: {e}")
+            else:
+                mock_bq_data = pd.DataFrame(
+                    [
+                        {
+                            "subscription_name": "projects/pub-sub-kamo/subscriptions/pubsub-demo-bq-sub",
+                            "message_id": f"msg-mock-{i:03d}",
+                            "publish_time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "attributes": '{"event_type": "text_prompt", "content-encoding": "zstd"}',
+                        }
+                        for i in range(1, 6)
+                    ]
+                )
+                st.dataframe(mock_bq_data, use_container_width=True)
+                st.caption(tr("• 모의 샌드박스 환경의 시뮬레이션 BigQuery 데이터입니다.", "• Simulated BigQuery records in Mock Sandbox."))
 
 st.markdown("---")
 st.markdown(

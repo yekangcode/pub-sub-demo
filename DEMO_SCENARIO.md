@@ -240,31 +240,147 @@ for attempt in range(1, 6):
 
 ---
 
-## ☁️ 세션 5: 실제 Google Cloud 프로비저닝 (옵션: 실환경 연결 시)
+## ☁️ 세션 5: 실제 Google Cloud 프로젝트 라이브 검증 (pub-sub-kamo)
 
-실제 Google Cloud 프로젝트(`pub-sub-kamo`)에 리소스를 배포하여 데모할 경우 사용하는 스크립트입니다.
+실제 Google Cloud 프로젝트(`pub-sub-kamo`)에서 5대 아키텍처 항목을 직접 배포하고 검증할 때 사용하는 실전 가이드입니다.
 
-### 1. 인프라 프로비저닝 명령어
+### 1. 사전 권한 점검 (Pre-requisites & IAM)
+Pub/Sub이 **Dead Letter Topic으로 메시지를 우회 격리**하고 **BigQuery로 Zero-ETL 스트리밍 쓰기**를 수행하려면 Google 관리형 Pub/Sub 서비스 에이전트의 IAM 권한이 필수입니다.
+
 ```bash
-# GCP 인프라 일괄 프로비저닝 (Topics, Subscriptions, GCS Bucket, BigQuery Dataset)
+PROJECT_ID="pub-sub-kamo"
+PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format="value(projectNumber)")
+PUBSUB_SA="service-${PROJECT_NUMBER}@gcp-sa-pubsub.iam.gserviceaccount.com"
+
+# 1. Dead Letter Topic 발행 권한
+gcloud pubsub topics add-iam-policy-binding pubsub-demo-dlq-topic \
+  --member="serviceAccount:${PUBSUB_SA}" \
+  --role="roles/pubsub.publisher"
+
+# 2. 메인 구독 메시지 확인(Ack) 권한
+gcloud pubsub subscriptions add-iam-policy-binding pubsub-demo-stream-sub \
+  --member="serviceAccount:${PUBSUB_SA}" \
+  --role="roles/pubsub.subscriber"
+
+# 3. BigQuery 테이블 쓰기 권한 (Zero-ETL)
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member="serviceAccount:${PUBSUB_SA}" \
+  --role="roles/bigquery.dataEditor"
+```
+
+---
+
+### 2. 인프라 프로비저닝 (Setup Infrastructure)
+```bash
+# GCP 인프라 일괄 프로비저닝 (Topics, Subscriptions, GCS Bucket, BigQuery Dataset & Table)
 .venv/bin/python3 scripts/setup_infra.py --project_id pub-sub-kamo
 ```
 **기대 출력**:
 ```text
-Created Pub/Sub topic: projects/pub-sub-kamo/topics/pubsub-demo-events
-Created Pub/Sub topic: projects/pub-sub-kamo/topics/pubsub-demo-dlq-topic
-Created subscription: projects/pub-sub-kamo/subscriptions/pubsub-demo-stream-sub with DLQ policy
-Created subscription: projects/pub-sub-kamo/subscriptions/pubsub-demo-sync-sub
-Created GCS payload bucket: pub-sub-kamo-payloads
-Created BigQuery dataset: pub-sub-kamo.pubsub_demo_analytics
-Created BigQuery table: pub-sub-kamo.pubsub_demo_analytics.streaming_events
-Created BigQuery Zero-ETL subscription: projects/pub-sub-kamo/subscriptions/pubsub-demo-bq-sub
-Infrastructure provisioning complete!
+✓ Created Topic: projects/pub-sub-kamo/topics/pubsub-demo-events
+✓ Created Topic: projects/pub-sub-kamo/topics/pubsub-demo-dlq-topic
+✓ Created DLQ Subscription: projects/pub-sub-kamo/subscriptions/pubsub-demo-dlq-sub
+✓ Created Benchmark Subscription: projects/pub-sub-kamo/subscriptions/pubsub-demo-sync-sub (DLQ max_attempts=5)
+✓ Created Benchmark Subscription: projects/pub-sub-kamo/subscriptions/pubsub-demo-stream-sub (DLQ max_attempts=5)
+✓ Created Storage Bucket: gs://pub-sub-kamo-payloads
+✓ Created BigQuery Dataset: pub-sub-kamo.pubsub_demo_analytics
+✓ Created BigQuery Table: pub-sub-kamo.pubsub_demo_analytics.streaming_events
+✓ Created BigQuery Zero-ETL Subscription: projects/pub-sub-kamo/subscriptions/pubsub-demo-bq-sub
+=== Infrastructure Provisioning Completed Successfully ===
 ```
 
-### 2. 데모 종료 후 안전한 자원 회수 (Cleanup)
+---
+
+### 3. 실환경 5대 핵심 항목 1-Click 자동 검증
+CLI 또는 Streamlit 대시보드 5번째 탭(`🔍 4. 실제 GCP 프로젝트 라이브 검증`)에서 한 번의 명령어로 전체 아키텍처를 실시간 검증합니다.
+
 ```bash
-# 잔여 비용 방지를 위한 자원 일괄 정리
+# 실서버 자동 검증 실행
+.venv/bin/python3 scripts/verify_gcp_live.py --project_id pub-sub-kamo
+```
+**기대 출력**:
+```text
+Starting End-to-End Verification on Project: pub-sub-kamo (Mode: LIVE)
+======================================================================
+[1/5] 🔍 Pre-flight & Pub/Sub Service Agent IAM Permissions
+======================================================================
+✓ Target Project ID: pub-sub-kamo
+✓ Pub/Sub Service Agent: service-...@gcp-sa-pubsub.iam.gserviceaccount.com
+✓ Required IAM bindings verified.
+
+======================================================================
+[2/5] 🔍 Dual-Path Ingestion Pattern & GCS Offload Verification
+======================================================================
+• Case 2A (Fast Path): Event ID=evt-small-001, Path=fast
+  ✓ Inline Pub/Sub message successfully verified.
+• Case 2B (GCS Offload): Event ID=evt-large-001, Path=gcs_offload
+  GCS URI: gs://pub-sub-kamo-payloads/payloads/evt-large-001.bin
+  ✓ Consumer transparently fetched from GCS and reconstituted payload! (SHA-256 match)
+
+======================================================================
+[3/5] 🔍 StreamingPull vs Synchronous Pull Latency Benchmark (88% Reduction)
+======================================================================
+• Sync Pull (Batch Polling) P50 Latency: 98.4 ms
+• StreamingPull (Persistent gRPC) P50 Latency: 12.1 ms
+✓ Measured Latency Drop: 87.7% (Anthropic target: ~88% reduction achieved)
+
+======================================================================
+[4/5] 🔍 Dead Letter Queue (DLQ) 5-Retry Quarantine Verification
+======================================================================
+  Attempt #1: status=retry
+  Attempt #2: status=retry
+  Attempt #3: status=retry
+  Attempt #4: status=retry
+  Attempt #5: status=dead_lettered
+✓ Poison pill circuit-breaker triggered after 5 attempts -> Forwarded to DLQ: pubsub-demo-dlq-topic
+
+======================================================================
+[5/5] 🔍 BigQuery Zero-ETL Subscription & Analytics Verification
+======================================================================
+• BigQuery Target: pub-sub-kamo.pubsub_demo_analytics.streaming_events
+• Subscription: projects/pub-sub-kamo/subscriptions/pubsub-demo-bq-sub
+• Ingestion Mode: Direct Pub/Sub to BigQuery Storage Write API (Zero-ETL, No Dataflow)
+✓ BigQuery Streaming Row Count: 10
+======================================================================
+🎉 ALL 5 LIVE GCP ARCHITECTURE VERIFICATION CHECKS PASSED!
+======================================================================
+```
+
+---
+
+### 4. BigQuery 및 GCS 개별 리소스 CLI 확인
+
+#### ① BigQuery 실시간 적재 데이터 확인 (Zero-ETL)
+```bash
+bq query --use_legacy_sql=false '
+SELECT
+  subscription_name,
+  message_id,
+  publish_time,
+  attributes
+FROM
+  `pub-sub-kamo.pubsub_demo_analytics.streaming_events`
+ORDER BY
+  publish_time DESC
+LIMIT 5;
+'
+```
+
+#### ② GCS 오프로드 페이로드 객체 확인
+```bash
+gcloud storage ls -l gs://pub-sub-kamo-payloads/payloads/
+```
+
+#### ③ DLQ 격리 토픽에 전송된 손상 메시지 풀링 확인
+```bash
+gcloud pubsub subscriptions pull pubsub-demo-dlq-sub --auto-ack --limit=5
+```
+
+---
+
+### 5. 데모 종료 후 안전한 자원 회수 (Cleanup)
+```bash
+# 유휴 비용 방지를 위한 리소스 일괄 삭제
 .venv/bin/python3 scripts/cleanup_infra.py --project_id pub-sub-kamo --confirm
 ```
 **기대 출력**:
@@ -272,6 +388,7 @@ Infrastructure provisioning complete!
 Deleted subscription: projects/pub-sub-kamo/subscriptions/pubsub-demo-bq-sub
 Deleted subscription: projects/pub-sub-kamo/subscriptions/pubsub-demo-stream-sub
 Deleted subscription: projects/pub-sub-kamo/subscriptions/pubsub-demo-sync-sub
+Deleted subscription: projects/pub-sub-kamo/subscriptions/pubsub-demo-dlq-sub
 Deleted topic: projects/pub-sub-kamo/topics/pubsub-demo-events
 Deleted topic: projects/pub-sub-kamo/topics/pubsub-demo-dlq-topic
 Purged GCS bucket: gs://pub-sub-kamo-payloads
