@@ -23,7 +23,7 @@
 - [x] Task: Dual-Path Ingestion Consumer (665ff75)
   - [x] Write tests for consumer payload reconstitution (`tests/test_consumer.py`)
   - [x] Implement `DualPathConsumer` in `src/consumer.py` (inline decompress vs GCS blob fetch)
-- [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
+- [x] Task: Phase Verification & Checkpoint (Refer to workflow.md) (a1243d5)
 
 ## Phase 3: StreamingPull vs Synchronous Pull Benchmark (TDD)
 - [ ] Task: Synchronous Pull Worker (Legacy Baseline)
