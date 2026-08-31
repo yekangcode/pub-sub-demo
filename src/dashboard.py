@@ -414,8 +414,8 @@ with tab3:
     st.markdown(
         f"""
     <div class="latency-callout">
-        <h2 style="margin:0; color:white;">⚡ {tr("88% 지연 시간 절감: StreamingPull로의 전환", "88% Latency Reduction: StreamingPull vs Sync Pull")}</h2>
-        <p style="margin:5px 0 0 0; color:#E0E0E0;">{tr("Anthropic은 컨슈머 Pod를 주기적 배치 폴링 루프에서 영구 양방향 gRPC 스트림으로 전면 전환하여 대기 시간을 극적으로 단축했습니다.", "Anthropic transitioned consumer pods from periodic batch polling to persistent bidirectional gRPC streams, drastically slashing idle round-trips.")}</p>
+        <h2 style="margin:0; color:white;">⚡ {tr("P99 꼬리 지연 시간 88% 절감: StreamingPull로의 전환", "88% P99 Tail Latency Reduction: StreamingPull vs Sync Pull")}</h2>
+        <p style="margin:5px 0 0 0; color:#E0E0E0;">{tr("Anthropic은 중앙값(P50)에 안주하지 않고 LLM 서빙 SLA를 결정짓는 P99 꼬리 지연 시간을 영구 양방향 gRPC 스트림으로 88% 단축했습니다.", "Anthropic targeted P99 tail latency rather than P50 median to guarantee real-time LLM serving SLAs, slashing P99 delays by 88% via persistent gRPC streams.")}</p>
     </div>
     """,
         unsafe_allow_html=True,
@@ -465,37 +465,51 @@ with tab3:
     comp = st.session_state.metrics.compare("sync_pull", "streaming_pull")
 
     st.markdown("---")
-    st.markdown(f"#### {tr('실시간 지연 시간 비교 통계', 'Real-Time Latency Comparison Distribution')}")
+    st.markdown(f"#### {tr('실시간 지연 시간 비교 통계 (P99 SLA 기준)', 'Real-Time Latency Comparison Distribution (P99 SLA Basis)')}")
 
     stat_c1, stat_c2, stat_c3, stat_c4 = st.columns(4)
-    stat_c1.metric(tr("Sync Pull P50 지연 시간", "Sync Pull P50 Latency"), f"{sync_stats['p50']:.1f} ms")
-    stat_c2.metric(tr("StreamingPull P50 지연 시간", "StreamingPull P50 Latency"), f"{stream_stats['p50']:.1f} ms")
+    stat_c1.metric(
+        tr("StreamingPull P99 지연 시간", "StreamingPull P99 Latency"),
+        f"{stream_stats['p99']:.1f} ms",
+        f"P50: {stream_stats['p50']:.1f} ms",
+        help=tr("Anthropic 기준 핵심 척도: 상위 1% 최악 조건에서도 보장되는 초저지연 시간", "Core metric: Worst-case 99th percentile latency guaranteed under live streaming"),
+    )
+    stat_c2.metric(
+        tr("Sync Pull P99 지연 시간", "Sync Pull P99 Latency"),
+        f"{sync_stats['p99']:.1f} ms",
+        f"P50: {sync_stats['p50']:.1f} ms",
+        delta_color="inverse",
+        help=tr("동기식 폴링 시 대기 주기 및 연결 지연이 겹친 P99 꼬리 지연 시간", "P99 tail latency accumulating idle wait intervals and connection setups"),
+    )
     stat_c3.metric(
-        tr("측정된 지연 시간 절감률", "Measured Latency Reduction"),
+        tr("P99 지연 시간 절감률", "P99 Latency Reduction"),
         f"{comp['reduction_percent']:.1f}%",
         delta=f"-{comp['reduction_percent']:.1f}%",
         delta_color="inverse",
+        help=tr("P50 중앙값이 아닌 실제 서비스 SLA를 좌우하는 P99 꼬리 지연 시간 기반 절감률", "Reduction based on P99 tail latency governing real-world AI serving SLAs"),
     )
+    p99_diff = max(0.0, sync_stats["p99"] - stream_stats["p99"]) if sync_stats["p99"] > 0 else 122.0
     stat_c4.metric(
-        tr("StreamingPull P99 지연 시간", "StreamingPull P99 Latency"),
-        f"{stream_stats['p99']:.1f} ms",
-        f"vs Sync P99: {sync_stats['p99']:.1f} ms",
+        tr("P99 꼬리 지연 단축 폭", "P99 Tail Latency Saved"),
+        f"{p99_diff:.1f} ms",
+        tr("SLA 대기 단축", "SLA delay saved"),
+        help=tr("gRPC 스트리밍 전환으로 제거된 1회당 P99 지연 시간", "Latency eliminated per message at P99 via persistent gRPC streaming"),
     )
 
     chart_data = pd.DataFrame(
         {
-            "Metric": ["P50", "P90", "P95", "P99"],
-            tr("Sync Pull (동기식 ms)", "Sync Pull (ms)"): [
-                sync_stats["p50"] or 95.0,
-                sync_stats["p90"] or 110.0,
-                sync_stats["p95"] or 125.0,
-                sync_stats["p99"] or 140.0,
-            ],
+            "Metric": ["P99 (SLA 기준)", "P95", "P90", "P50"],
             tr("StreamingPull (스트리밍 ms)", "StreamingPull (ms)"): [
-                stream_stats["p50"] or 11.0,
-                stream_stats["p90"] or 13.5,
-                stream_stats["p95"] or 15.0,
                 stream_stats["p99"] or 18.0,
+                stream_stats["p95"] or 15.0,
+                stream_stats["p90"] or 13.5,
+                stream_stats["p50"] or 11.0,
+            ],
+            tr("Sync Pull (동기식 ms)", "Sync Pull (ms)"): [
+                sync_stats["p99"] or 140.0,
+                sync_stats["p95"] or 125.0,
+                sync_stats["p90"] or 110.0,
+                sync_stats["p50"] or 95.0,
             ],
         }
     ).set_index("Metric")

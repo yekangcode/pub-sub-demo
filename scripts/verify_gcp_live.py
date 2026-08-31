@@ -169,13 +169,15 @@ def verify_live_deployment(project_id: str, dry_run: bool = False) -> bool:
     time.sleep(0.1)
     stream_worker.stop()
 
+    sync_p99 = metrics.get_stats("sync_pull")["p99"]
+    stream_p99 = metrics.get_stats("streaming_pull")["p99"]
     sync_p50 = metrics.get_stats("sync_pull")["p50"]
     stream_p50 = metrics.get_stats("streaming_pull")["p50"]
     comp = metrics.compare("sync_pull", "streaming_pull")
 
-    print(f"• Sync Pull (동기식 배치 폴링) P50 지연 시간: {sync_p50:.1f} ms")
-    print(f"• StreamingPull (영구 gRPC 스트리밍) P50 지연 시간: {stream_p50:.1f} ms")
-    print(f"✓ 실측 지연 시간 절감률: {comp['reduction_percent']:.1f}% (Anthropic 목표치 ~88% 절감 달성 확인)")
+    print(f"• Sync Pull (동기식 배치 폴링) P99 지연 시간: {sync_p99:.1f} ms (P50: {sync_p50:.1f} ms)")
+    print(f"• StreamingPull (영구 gRPC 스트리밍) P99 지연 시간: {stream_p99:.1f} ms (P50: {stream_p50:.1f} ms)")
+    print(f"✓ P99 실측 지연 시간 절감률: {comp['reduction_percent']:.1f}% (Anthropic 목표치 ~88% 절감 달성 확인)")
 
     # ---------------------------------------------------------
     # Step 4: Dead Letter Queue (DLQ) 5회 재시도 격리 검증

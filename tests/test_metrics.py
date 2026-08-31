@@ -29,6 +29,8 @@ def test_metrics_collector_88_percent_reduction_calculation():
         collector.record_latency("streaming_pull", 12.0)
 
     comparison = collector.compare("sync_pull", "streaming_pull")
+    assert comparison["baseline_p99"] == 100.0
+    assert comparison["optimized_p99"] == 12.0
     assert comparison["baseline_p50"] == 100.0
     assert comparison["optimized_p50"] == 12.0
     assert comparison["reduction_percent"] == 88.0

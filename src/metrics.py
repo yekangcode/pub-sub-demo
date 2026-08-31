@@ -84,21 +84,23 @@ class MetricsCollector:
         }
 
     def compare(self, baseline_label: str, optimized_label: str) -> dict[str, float]:
-        """기준 워커(Sync Pull)와 최적화 워커(StreamingPull) 간의 P50 지연 시간 절감률을 산출합니다."""
+        """기준 워커(Sync Pull)와 최적화 워커(StreamingPull) 간의 P99 꼬리 지연 시간(Tail Latency) 절감률을 산출합니다."""
         b_stats = self.get_stats(baseline_label)
         o_stats = self.get_stats(optimized_label)
 
-        b_p50 = b_stats["p50"]
-        o_p50 = o_stats["p50"]
+        b_p99 = b_stats["p99"]
+        o_p99 = o_stats["p99"]
 
-        if b_p50 > 0:
-            reduction = ((b_p50 - o_p50) / b_p50) * 100.0
+        if b_p99 > 0:
+            reduction = ((b_p99 - o_p99) / b_p99) * 100.0
         else:
             reduction = 0.0
 
         return {
-            "baseline_p50": round(b_p50, 2),
-            "optimized_p50": round(o_p50, 2),
+            "baseline_p99": round(b_p99, 2),
+            "optimized_p99": round(o_p99, 2),
+            "baseline_p50": round(b_stats["p50"], 2),
+            "optimized_p50": round(o_stats["p50"], 2),
             "reduction_percent": round(reduction, 2),
             "baseline_count": b_stats["count"],
             "optimized_count": o_stats["count"],
