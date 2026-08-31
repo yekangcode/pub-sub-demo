@@ -819,8 +819,8 @@ message StreamingEvent {
 // 12 15 63 6C 61 75 64 65 2D 73 65 72 76 69 6E 67 2D 70 6F...'''
         st.code(sample_proto_code, language="protobuf")
         st.caption(tr(
-            "✅ 1바이트 Varint 태그 적용: 필드명 전송 0B! (텍스트 키 'timestamp_ms' 14B 대신 1바이트 0x28 + 가변 정수 인코딩)",
-            "✅ 1-byte Varint Tags: 0B field name wire overhead! (Replaces 'timestamp_ms' 14B with 1-byte 0x28 + Varint encoding)"
+            "✅ 필드 식별 오버헤드 14B ➔ 1B 축소: 텍스트 키('timestamp_ms') 문자열은 0B(완전 제거)! 대신 1바이트 태그(0x28) + Varint 정수 인코딩",
+            "✅ Field Identification Overhead 14B ➔ 1B: String field name is 0B (eliminated)! Replaced by 1-byte tag (0x28) + Varint encoding"
         ))
 
     st.markdown("---")
