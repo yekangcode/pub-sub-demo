@@ -451,6 +451,151 @@ with tab3:
     ).set_index("Metric")
     st.bar_chart(chart_data)
 
+    # ------------------ ARCHITECTURE DEEP DIVE: SYNC PULL VS STREAMINGPULL ------------------
+    st.markdown("---")
+    st.markdown(
+        f"""
+        ### 🔄 {tr("Sync Pull vs StreamingPull 아키텍처 비교 & 워크플로우", "Sync Pull vs StreamingPull Architecture & Workflow")}
+        <p style="color: #90a4ae; font-size: 0.95em; margin-top: -8px;">
+            📖 <strong>{tr("공식 가이드", "Official Guide")}</strong>: <a href="https://docs.cloud.google.com/pubsub/docs/pull" target="_blank" style="color: #00c6ff; text-decoration: underline;">Google Cloud Pub/Sub Pull Message Flow Documentation</a><br>
+            {tr(
+                "Google Cloud Pub/Sub의 메시지 수급 체계는 <strong>네트워크 커넥션 수립 방식과 주도권의 위치</strong>에 따라 명확한 기술적 차이를 보입니다.",
+                "Pub/Sub message reception differs fundamentally based on <strong>network connection establishment and delegation of initiative</strong>."
+            )}
+        </p>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f"""
+        #### 🗺️ {tr("메시지 수급 워크플로우 비교 (Workflow Sequence)", "Message Consumption Workflow Comparison")}
+        """
+    )
+    st.markdown(
+        """
+```mermaid
+sequenceDiagram
+    autonumber
+    rect rgb(40, 25, 30)
+    Note over Client_Sync, PubSub_Sync: [① Sync Pull: 단방향 동기식 폴링 루프 - 약 95ms]
+    Client_Sync->>PubSub_Sync: 1. PullRequest(max_messages=10)
+    Note over Client_Sync, PubSub_Sync: 매 요청마다 TCP/TLS 핸드셰이크 및 브로커 대기 오버헤드
+    PubSub_Sync-->>Client_Sync: 2. PullResponse(messages)
+    Client_Sync->>PubSub_Sync: 3. AcknowledgeRequest(ack_ids)
+    Note over Client_Sync: 대기 주기(Polling Sleep) 후 다시 다음 PullRequest 반복...
+    end
+
+    rect rgb(15, 35, 45)
+    Note over Client_Stream, PubSub_Stream: [② StreamingPull: 영구 양방향 gRPC 스트리밍 - 약 11ms (88% 절감)]
+    Client_Stream->>PubSub_Stream: 1. Open Bidirectional gRPC Channel (HTTP/2)
+    Note over PubSub_Stream: 브로커는 데이터 인입 즉시 클라이언트 요청 없이 스트림으로 푸시(Push-like)!
+    PubSub_Stream-->>Client_Stream: 2. StreamingPullResponse (도착 즉시 실시간 푸시)
+    Client_Stream-->>PubSub_Stream: 3. StreamingPullRequest (비동기 Ack / Flow Control 전달)
+    Note over Client_Stream, PubSub_Stream: 단일 스트림 채널을 항시 유지하여 폴링 유휴 대기 시간 전무
+    end
+```
+        """
+    )
+
+    st.markdown(f"#### 1. {tr('아키텍처 설계상의 근본적 차이', 'Fundamental Architectural Differences')}")
+    arch_col1, arch_col2 = st.columns(2)
+    with arch_col1:
+        st.markdown(
+            f"""
+            <div style="background-color: #1a1e24; border: 1px solid #ef5350; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px;">
+                <span style="font-weight: 700; color: #ef5350; font-size: 1.05em;">① Sync Pull ({tr("단방향 동기식 폴링", "Unary Synchronous Polling")})</span>
+                <ul style="color: #cfd8dc; font-size: 0.9em; margin: 8px 0 0 16px; line-height: 1.6;">
+                    <li><strong>{tr("메커니즘", "Mechanism")}</strong>: {tr("클라이언트가 브로커(서버)를 향해 주기적으로 데이터 유무를 확인하는 <strong>단일 RPC 요청-응답 구조</strong>입니다. 전통적인 폴링(Polling) 방식을 따릅니다.", "Single RPC request-response pattern where the client periodically checks the broker for data availability (classic polling).")}</li>
+                    <li><strong>{tr("레이턴시 패널티", "Latency Penalty")}</strong>: {tr("메시지가 존재하지 않을 때도 요청을 반복해야 하며, 다음 주기까지 발생하는 대기 시간과 매번 핸드셰이크를 수행하는 네트워크 오버헤드로 인해 <strong>지연 시간이 누적(~95ms)</strong>됩니다.", "Accumulates latency (~95ms) from idle wait intervals between cycles and repeated connection handshake overheads even when no messages exist.")}</li>
+                    <li><strong>{tr("제어 최적화", "Control Optimization")}</strong>: {tr("수신 측의 가용 리소스 상황에 맞춰 메시지 인입량을 엄격히 제한할 수 있어, <strong>클라이언트 사이드의 부하 관리가 매우 용이</strong>합니다.", "Strictly limits incoming volume based on client-side available resources, making overload prevention straightforward.")}</li>
+                </ul>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with arch_col2:
+        st.markdown(
+            f"""
+            <div style="background-color: #1a1e24; border: 1px solid #00c6ff; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px;">
+                <span style="font-weight: 700; color: #00c6ff; font-size: 1.05em;">② StreamingPull ({tr("영구 양방향 gRPC 스트리밍", "Persistent Bidirectional gRPC Streaming")})</span>
+                <ul style="color: #cfd8dc; font-size: 0.9em; margin: 8px 0 0 16px; line-height: 1.6;">
+                    <li><strong>{tr("메커니즘", "Mechanism")}</strong>: {tr("HTTP/2 기반의 gRPC를 활용하여 클라이언트와 서버 사이에 <strong>항시 유지되는 양방향 채널</strong>을 구축합니다. 브로커는 데이터 인입 즉시 클라이언트 요청 없이도 스트림을 통해 실시간으로 밀어냅니다(Push-like).", "Maintains a persistent bidirectional HTTP/2 gRPC channel. The broker pushes messages in real-time as soon as they arrive without awaiting requests.")}</li>
+                    <li><strong>{tr("퍼포먼스 우위", "Performance Advantage")}</strong>: {tr("폴링에 따르는 유휴 대기 시간이 전무하므로 <strong>극도의 처리량과 초저지연(~11ms)을 보장</strong>합니다. (Anthropic 사례에서 <strong>지연 시간을 88%까지 절감</strong>한 기술적 핵심입니다.)", "Zero idle polling latency ensures ultra-low delivery times (~11ms) and high throughput (the core architectural key to Anthropic's 88% latency slash).")}</li>
+                    <li><strong>{tr("리소스 오버헤드", "Resource Overhead")}</strong>: {tr("스트림 유지 및 비동기 처리를 위한 <strong>백그라운드 프로세싱(스레드/Goroutine)이 필수적</strong>이며, 메모리와 네트워크 대역폭이 상시 점유되는 특징이 있습니다.", "Requires persistent background processing threads/goroutines to manage streams and leases, keeping memory and connections permanently engaged.")}</li>
+                </ul>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown(f"#### 2. {tr('StreamingPull이 만능 해결책인가? (전략적 Sync Pull 선택 가이드)', 'Is StreamingPull a Silver Bullet? (Strategic Use Cases for Sync Pull)')}")
+    st.markdown(
+        f"""
+        <div style="background-color: #121820; border-left: 4px solid #ffb300; padding: 12px 18px; border-radius: 6px; margin-bottom: 16px;">
+            <p style="color: #eceff1; font-size: 0.93em; margin: 0; line-height: 1.6;">
+                {tr(
+                    "실시간 스트리밍 관점에서는 <strong>StreamingPull이 압도적인 성능</strong>을 보이지만, 모든 인프라 환경과 비즈니스 로직에서 항상 정답인 것은 아닙니다.<br>"
+                    "Google Cloud 공식 가이드에서도 범용적인 비동기 처리에는 StreamingPull을 권장하나, <strong>지연 시간 최적화보다 인프라 효율성이나 단순한 제어가 우선되는 특수 환경</strong>에서는 <strong>Sync Pull이 전략적으로 선택</strong>됩니다.",
+                    "While StreamingPull delivers dominant performance for real-time streaming, it is not a silver bullet for every architectural workload.<br>"
+                    "Google Cloud officially recommends StreamingPull for general async processing, but <strong>Sync Pull remains strategically superior in specialized environments</strong> where infrastructure cost efficiency or simple execution control outweighs sub-second latency."
+                )}
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    uc1, uc2, uc3 = st.columns(3)
+    with uc1:
+        st.markdown(
+            f"""
+            <div style="background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px 16px; height: 100%;">
+                <span style="font-weight: 700; color: #ffd54f; font-size: 0.98em;">📦 {tr("배치 처리 및 서버리스 (Scale to 0)", "Batch & Serverless (Scale to 0)")}</span>
+                <p style="color: #b0bec5; font-size: 0.85em; margin: 8px 0 0 0; line-height: 1.5;">
+                    {tr(
+                        "특정 시점에만 활성화되어(Scale to 0) 정해진 분량의 데이터를 소화하고 종료되는 <strong>Cloud Functions나 배치형 워크로드</strong>에는 고정 스트림 유지가 비효율적입니다. 필요한 시점에만 단건/배치로 연결하는 Sync Pull이 리소스 비용 면에서 훨씬 유리합니다.",
+                        "For ephemeral workloads (Cloud Functions, Cloud Run Jobs) that scale to 0 and terminate after processing a fixed batch, keeping persistent streams alive is wasteful. On-demand polling minimizes runtime costs."
+                    )}
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with uc2:
+        st.markdown(
+            f"""
+            <div style="background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px 16px; height: 100%;">
+                <span style="font-weight: 700; color: #ffd54f; font-size: 0.98em;">⚙️ {tr("하드웨어 리소스 제약 환경", "Hardware Resource Constraints")}</span>
+                <p style="color: #b0bec5; font-size: 0.85em; margin: 8px 0 0 0; line-height: 1.5;">
+                    {tr(
+                        "지속적인 CPU 사이클과 메모리 점유가 부담스러운 <strong>극도로 제한된 컴퓨팅 환경(Edge 기기, 경량 컨테이너)</strong>에서는, 명시적인 요청 시에만 작동하는 동기식 모델이 시스템 안정성을 확보하기에 적합합니다.",
+                        "In constrained edge devices or lightweight micro-containers where background CPU threads and memory allocations cause strain, synchronous demand-driven polling guarantees predictability and stability."
+                    )}
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with uc3:
+        st.markdown(
+            f"""
+            <div style="background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px 16px; height: 100%;">
+                <span style="font-weight: 700; color: #ffd54f; font-size: 0.98em;">🎯 {tr("고정밀 유량 제어 (Strict Flow Control)", "Strict Flow Control & Isolation")}</span>
+                <p style="color: #b0bec5; font-size: 0.85em; margin: 8px 0 0 0; line-height: 1.5;">
+                    {tr(
+                        "메시지 한 건당 수 분의 연산 시간이 소요되어 클라이언트 버퍼링 없이 <strong>순차적으로 엄밀하게 처리해야 하는 복잡한 로직</strong>의 경우, 클라이언트가 직접 인입 주도권을 갖는 Sync Pull이 구조적 단순성을 제공합니다.",
+                        "When each message takes minutes of intense computation and client buffering must be avoided at all costs, Sync Pull provides deterministic step-by-step pull control without complex buffer leases."
+                    )}
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
 # ----------------- TAB 4: BINARY SCHEMA OPTIMIZATION & DLQ -----------------
 with tab4:
     st.subheader(tr("핵심 축 3: 데이터 전송 포맷 최적화 (바이너리 스키마) & DLQ 거버넌스", "Pillar 3: Binary Schema Optimization & DLQ Governance"))
