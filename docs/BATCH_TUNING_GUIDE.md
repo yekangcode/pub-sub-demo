@@ -29,59 +29,29 @@ Pub/Sub 클라이언트 라이브러리는 메시지를 메모리 내 내부 버
 
 ---
 
-## 2. 워크로드 성격별 권장 프리셋 (Presets)
+## 2. 워크로드별 권장 설정 가이드
 
-비즈니스 요구사항에 따라 아래 3가지 표준 프리셋 중 하나를 선택하여 적용합니다.
-
-### 🔴 패턴 A: 초저지연 프리셋 (Ultra-Low Latency)
-- **적용 대상**: 실시간 이상 거래 탐지(FDS), 결제 승인, 사용자 인터랙티브 알림, 긴급 시스템 제어
-- **핵심 목표**: 지연 시간 극소화(Sub-15ms) 유지, 순간적인 버스트 트래픽에만 자연스러운 배치 형성
-- **권장 설정치**:
-  - `max_messages`: **50 ~ 100개**
-  - `max_bytes`: **256KB ~ 1MB**
-  - `max_latency`: **1ms ~ 10ms** (0.001s ~ 0.010s)
-
-### 🟡 패턴 B: 범용 고처리량 프리셋 (General High-Throughput) — ⭐ 프로덕션 표준 권장
-- **적용 대상**: 일반 웹/앱 백엔드 API, 마이크로서비스 간 도메인 이벤트 발행, 사용자 행동 로그
-- **핵심 목표**: 사용자 체감 성능(50ms 이내)에 영향을 주지 않으면서 네트워크 RPC 호출 수를 90% 이상 절감하고 소켓 리소스 안정화
-- **권장 설정치**:
-  - `max_messages`: **500 ~ 1,000개**
-  - `max_bytes`: **4MB ~ 8MB**
-  - `max_latency`: **30ms ~ 50ms** (0.030s ~ 0.050s)
-
-### 🟢 패턴 C: 벌크 데이터 파이프라인 프리셋 (Bulk Ingestion & ETL)
-- **적용 대상**: 대규모 분산 모델 학습 텔레메트리, 인프라 메트릭 수집, 데이터 웨어하우스(BigQuery) 적재용 대용량 로그
-- **핵심 목표**: 브로커 전송 바이트 극대화(배치당 ~9MB), 1KB 최소 과금 완벽 무력화, 클라이언트 Zstd 압축 효율 극대화
-- **권장 설정치**:
-  - `max_messages`: **1,000개** (서버 하드 리밋)
-  - `max_bytes`: **9.0MB ~ 9.5MB** (gRPC 메타데이터 오버헤드 마진)
-  - `max_latency`: **100ms ~ 500ms** (0.100s ~ 0.500s)
+| 설정 항목 | 표준/일반 프로덕션 (Balanced) | 대용량 처리/데이터 파이프라인 (High Throughput) | 저지연 실시간 처리 (Low Latency) |
+| :--- | :--- | :--- | :--- |
+| **메시지 수 (`max_messages`)** | **100 ~ 500개** | **1,000개** (서버 한계) | **10 ~ 50개** |
+| **요청 바이트 (`max_bytes`)** | **1 MB (1,000,000 B)** | **8 MB (8,000,000 B)** | **256 KB** |
+| **대기 시간 (`max_latency`)** | **10 ms (0.01초)** | **50 ms ~ 100 ms** | **1 ms ~ 5 ms** |
+| **Flow Control 정책** | **BLOCK (메모리 보호)** | **BLOCK (메모리 보호)** | **BLOCK / THROW_EXCEPTION** |
 
 ---
 
-## 3. 프로덕션 운영 시 필수 체크리스트 (Top 4 Gotchas)
+## 3. 프로덕션 운영 시 주의사항 (Watch-out)
 
-### ① 10MB 물리 한도와 gRPC 프레임 오버헤드 (RequestByteThreshold)
-* **문제 배경**: Google Cloud Pub/Sub 서버의 단일 요청 물리 상한은 정확히 **10,000,000 바이트**입니다.
-* **위험 요인**: `max_bytes`를 정확히 10MB(`10 * 1024 * 1024 = 10,485,760 B`) 또는 `10,000,000 B`로 설정하면, gRPC 프로토콜 프레이밍, TLS 레코드 헤더, 메시지 속성(Attributes) 메타데이터가 추가되면서 서버에서 간헐적으로 `INVALID_ARGUMENT: Request payload size exceeds the limit: 10000000 bytes` 오류를 반환하며 배치가 통째로 드롭됩니다.
-* **해결책**: 반드시 **8MB ~ 9.5MB(9,000,000 ~ 9,500,000 바이트)** 수준으로 **500KB~1MB의 안전 마진(Safety Margin)**을 두어야 합니다.
+| 항목 | 점검 포인트 및 권장 조치 |
+| :--- | :--- |
+| **비동기 Future 처리** | `publish()` 호출 시 즉시 전송되지 않고 Future를 반환하므로, 반드시 콜백(Callback)을 등록하여 전송 실패/에러를 핸들링해야 합니다. |
+| **Graceful Shutdown** | 애플리케이션 종료 시 Publisher 클라이언트를 반드시 `shutdown()` 또는 버퍼 플러시(`awaitTermination`)하여 메모리에 남아있는 배치가 유실되지 않도록 해야 합니다. |
+| **Ordering Key 사용 시** | 메시지 순서 보장(`OrderingKey`)을 활성화한 경우, 특정 키에 장애가 발생하면 해당 키의 후속 배치가 블로킹되므로 재시도 정책과 에러 핸들링을 별도로 분리해야 합니다. |
 
-### ② FlowControl 누락 시 OOM 발생 (가장 흔한 프로덕션 장애 요인)
-* **문제 배경**: Pub/Sub 클라이언트는 비동기 논블로킹(Non-blocking) 방식으로 작동하며, `publish()` 호출 시 즉시 `Future` 객체를 반환합니다.
-* **기본값의 함정**: 기본 설정인 `LimitExceededBehavior.IGNORE` 상태에서는 네트워크 일시 단절이나 다운스트림 브로커 지연이 발생할 때, 백그라운드 메모리 버퍼에 미완료 `Future` 객체와 페이로드 바이트가 무한정 적재됩니다.
-* **결과**: **JVM 힙 메모리 고갈 또는 Python 메모리 스파이크로 인한 프로세스 OOM Crash** 발생!
-* **해결책**: 클라이언트 수준의 **발행 유량 제어(`PublishFlowControl`)**를 반드시 구성하고, 한도 초과 시 발행 호출자를 일시 대기시키는 `LimitExceededBehavior.BLOCK`을 활성화해야 합니다.
-
-### ③ 프로세스 종료 시 Graceful Shutdown 미구현으로 인한 데이터 유실
-* **문제 배경**: 메시지들이 메모리 큐에 배치 대기 상태(`max_latency` 동안 체류)에 있는 도중 배포, 재기동, 컨테이너 Scale-in 등으로 인해 프로세스가 종료되면 버퍼의 메시지가 공중으로 증발합니다.
-* **해결책**:
-  - Python: `atexit` 모듈 또는 SIGTERM 핸들러에서 대기 중인 모든 Future 완료를 기다립니다.
-  - Java: `Runtime.getRuntime().addShutdownHook`에서 `publisher.shutdown()` 후 `publisher.awaitTermination(60, TimeUnit.SECONDS)`를 반드시 호출합니다.
-
-### ④ Ordering Key 사용 시 단일 실패로 인한 연쇄 블록 현상
-* **문제 배경**: 메시지 순서 보장을 위해 `enable_message_ordering = True` 및 `ordering_key`를 부여한 경우, Pub/Sub은 동일 키를 가진 메시지의 선후 관계를 엄격히 유지합니다.
-* **위험 요인**: 만약 특정 배치의 메시지 하나가 유효성 검증 실패(예: 스키마 불일치, 권한 부족) 등으로 영구 실패하면, **동일한 Ordering Key를 가진 후속 메시지들이 전부 전송 중단된 채 버퍼에 블록**됩니다.
-* **해결책**: 실패 콜백에서 에러를 로깅하고, 필요 시 `publisher.resume_publish(ordering_key)`를 호출하여 후속 메시지의 파이프라인을 재개하거나 Dead Letter 처리를 연계해야 합니다.
+### 세부 점검 가이드 (Deep Dive)
+* **10MB 물리 한도 마진**: 서버 한계(10,000,000 B)에 임계치를 맞추면 gRPC 헤더 오버헤드로 `INVALID_ARGUMENT` 오류가 발생하므로 반드시 **8MB ~ 9.5MB**로 설정합니다.
+* **FlowControl 누락 방지**: 기본값 `IGNORE`는 백그라운드 큐에 Future가 무한정 쌓여 프로세스 OOM Crash를 초래합니다. `LimitExceededBehavior.BLOCK`을 필수로 적용하세요.
+* **종료 훅 등록**: 컨테이너 Scale-in이나 SIGTERM 수신 시 버퍼에 남은 메시지가 버려지지 않도록 `atexit` 또는 Java ShutdownHook에서 잔여 Future 완료 대기를 강제합니다.
 
 ---
 

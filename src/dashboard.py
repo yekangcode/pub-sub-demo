@@ -1051,122 +1051,91 @@ message StreamingEvent {
         ).set_index(tr("과금 구분", "Category"))
         st.bar_chart(batch_chart_df)
 
-    st.markdown(f"#### 💻 {tr('프로덕션 권장 BatchSettings & FlowControl 코드 구성', 'Recommended Production BatchSettings & FlowControl Code')}")
-    snippet_code = BatchBillingOptimizer.get_batch_settings_code_snippet(
-        max_messages=b_batch_size,
-        max_bytes_mb=1,
-        max_latency_ms=b_latency_ms,
+    st.markdown(f"#### 📋 {tr('핵심 원리 및 물리 한도 (Hard Limits)', 'Core Mechanisms & Hard Limits')}")
+    st.write(
+        tr(
+            "Pub/Sub 클라이언트는 메시지를 메모리 버퍼에 모아두었다가 아래 **3가지 조건 중 하나라도 먼저 도달(OR 조건)**하면 단일 `PublishRequest` RPC로 일괄 전송합니다.",
+            "Pub/Sub clients buffer messages in memory and send a single `PublishRequest` RPC as soon as **any of the 3 conditions is met first (OR condition)**.",
+        )
     )
-    st.code(snippet_code, language="python")
 
-    with st.expander(f"📚 {tr('공식 문서 기반 BatchSettings 프로덕션 튜닝 가이드 & 4대 필수 체크리스트', 'Official BatchSettings Production Tuning Guide & 4 Key Checklists')}", expanded=False):
-        st.markdown(
-            f"""
-            #### 1. {tr("핵심 원리 및 물리 한도 (Hard Limits)", "Core Mechanisms & Hard Limits")}
-            {tr(
-                "Pub/Sub 클라이언트는 메시지를 메모리 버퍼에 모아두었다가 아래 <strong>3가지 조건 중 하나라도 먼저 도달(OR 조건)</strong>하면 단일 <code>PublishRequest</code> RPC로 일괄 전송합니다.",
-                "Pub/Sub clients buffer messages in memory and send a single <code>PublishRequest</code> RPC as soon as <strong>any of the 3 conditions is met first (OR condition)</strong>."
-            )}
-            """,
-            unsafe_allow_html=True,
-        )
-        limits_data = pd.DataFrame(
-            {
-                tr("조건 파라미터", "Parameter"): [
-                    tr("메시지 개수 (max_messages)", "Message Count (max_messages)"),
-                    tr("바이트 크기 (max_bytes)", "Byte Size (max_bytes)"),
-                    tr("지연 시간 (max_latency)", "Delay Threshold (max_latency)"),
-                ],
-                tr("기본값 (Default)", "Default"): [
-                    "100개",
-                    "1KB (Java) / 1MB (Py)",
-                    "1ms (Java) / 10ms (Py)",
-                ],
-                tr("프로덕션 권장치 (High Throughput)", "Production Recommended"): [
-                    "1,000개",
-                    "8MB ~ 9.5MB",
-                    "50ms ~ 100ms",
-                ],
-                tr("Pub/Sub 서버 한계 (Server Hard Limit)", "Server Hard Limit"): [
-                    tr("단일 요청당 최대 1,000개", "Max 1,000 msgs/request"),
-                    tr("단일 요청당 최대 10MB (10,000,000 B)", "Max 10MB (10,000,000 B)"),
-                    tr("제한 없음", "No limit"),
-                ],
-            }
-        ).set_index(tr("조건 파라미터", "Parameter"))
-        st.dataframe(limits_data, use_container_width=True)
+    limits_df = pd.DataFrame(
+        {
+            tr("조건 파라미터", "Condition Parameter"): [
+                tr("메시지 수 (max_messages)", "Message Count (max_messages)"),
+                tr("요청 바이트 (max_bytes)", "Request Bytes (max_bytes)"),
+                tr("대기 시간 (max_latency)", "Delay Threshold (max_latency)"),
+            ],
+            tr("기본값", "Default"): [
+                "100개",
+                "1KB (Java) / 1MB (Py)",
+                "1ms (Java) / 10ms (Py)",
+            ],
+            tr("Pub/Sub 서버 한계", "Server Hard Limit"): [
+                tr("단일 요청당 최대 1,000개", "Max 1,000 msgs/request"),
+                tr("단일 요청당 최대 10MB (10,000,000 B)", "Max 10MB (10,000,000 B)"),
+                tr("제한 없음", "No limit"),
+            ],
+        }
+    ).set_index(tr("조건 파라미터", "Condition Parameter"))
+    st.dataframe(limits_df, use_container_width=True)
 
-        st.markdown(
-            f"""
-            <div style="background: rgba(245, 127, 23, 0.15); border-left: 3px solid #f57f17; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px; font-size: 0.9em; color: #fff3e0;">
-                ⚠️ <strong>{tr("기본값(Default)의 문제점", "Danger of Default Settings")}</strong>: {tr("기본 설정(1ms, 1KB)은 지연 시간 단축에 치우쳐 있어 메시지당 별도 RPC가 빈번히 발생합니다. 대량 트래픽 인입 시 CPU 과점유, 네트워크 소켓 고갈, 시스템 처리량 저하가 발생하므로 배치 크기를 반드시 늘려야 합니다.", "Default settings (1ms, 1KB) bias toward ultra-low latency, triggering excessive individual RPCs. Under high load, this exhausts sockets, spikes CPU, and slashes throughput.")}
-            </div>
+    st.markdown(f"#### 🎯 {tr('워크로드별 권장 설정 가이드', 'Recommended Settings by Workload')}")
+    workload_df = pd.DataFrame(
+        {
+            tr("설정 항목", "Setting"): [
+                tr("메시지 수 (max_messages)", "Message Count (max_messages)"),
+                tr("요청 바이트 (max_bytes)", "Request Bytes (max_bytes)"),
+                tr("대기 시간 (max_latency)", "Delay (max_latency)"),
+                tr("Flow Control 정책", "Flow Control Policy"),
+            ],
+            tr("표준/일반 프로덕션 (Balanced)", "Balanced / Standard Production"): [
+                "100 ~ 500개",
+                "1 MB (1,000,000 B)",
+                "10 ms (0.01초)",
+                "BLOCK (메모리 보호)",
+            ],
+            tr("대용량 처리/데이터 파이프라인 (High Throughput)", "High Throughput / Pipeline"): [
+                "1,000개",
+                "8 MB (8,000,000 B)",
+                "50 ms ~ 100 ms",
+                "BLOCK (메모리 보호)",
+            ],
+            tr("저지연 실시간 처리 (Low Latency)", "Low Latency / Real-Time"): [
+                "10 ~ 50개",
+                "256 KB",
+                "1 ms ~ 5 ms",
+                "BLOCK / THROW_EXCEPTION",
+            ],
+        }
+    ).set_index(tr("설정 항목", "Setting"))
+    st.dataframe(workload_df, use_container_width=True)
 
-            #### 2. {tr("워크로드 성격별 권장 프리셋 (3대 패턴)", "Recommended Presets by Workload Pattern")}
-            """,
-            unsafe_allow_html=True,
-        )
-
-        wp_c1, wp_c2, wp_c3 = st.columns(3)
-        with wp_c1:
-            st.markdown(
-                f"""
-                <div style="background-color: #1a1e24; border: 1px solid #ff5252; border-radius: 8px; padding: 12px 14px; height: 100%;">
-                    <span style="font-weight: 700; color: #ff5252; font-size: 0.95em;">🔴 {tr("패턴 A: 초저지연 (Ultra-Low Latency)", "Pattern A: Ultra-Low Latency")}</span>
-                    <ul style="color: #cfd8dc; font-size: 0.84em; margin: 8px 0 0 14px; line-height: 1.5;">
-                        <li><strong>{tr("적용", "Use Case")}</strong>: {tr("실시간 금융 결제, 알림, 즉각 제어", "Real-time payments, urgent alerts")}</li>
-                        <li><code>max_messages</code>: <strong>50 ~ 100개</strong></li>
-                        <li><code>max_bytes</code>: <strong>256KB ~ 1MB</strong></li>
-                        <li><code>max_latency</code>: <strong>1ms ~ 10ms</strong></li>
-                        <li><strong>{tr("특징", "Key Point")}</strong>: {tr("Sub-15ms 레이턴시 유지, 버스트 시에만 배치 형성", "Maintains sub-15ms; batches only on burst")}</li>
-                    </ul>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        with wp_c2:
-            st.markdown(
-                f"""
-                <div style="background-color: #1a1e24; border: 1px solid #00e5ff; border-radius: 8px; padding: 12px 14px; height: 100%;">
-                    <span style="font-weight: 700; color: #00e5ff; font-size: 0.95em;">🔵 {tr("패턴 B: 범용 고처리량 (⭐ 프로덕션 표준)", "Pattern B: General High-Throughput (Standard)")}</span>
-                    <ul style="color: #cfd8dc; font-size: 0.84em; margin: 8px 0 0 14px; line-height: 1.5;">
-                        <li><strong>{tr("적용", "Use Case")}</strong>: {tr("일반 웹/앱 백엔드 API, 마이크로서비스 이벤트", "General APIs, microservice domain events")}</li>
-                        <li><code>max_messages</code>: <strong>500 ~ 1,000개</strong></li>
-                        <li><code>max_bytes</code>: <strong>4MB ~ 8MB</strong></li>
-                        <li><code>max_latency</code>: <strong>30ms ~ 50ms</strong></li>
-                        <li><strong>{tr("특징", "Key Point")}</strong>: {tr("체감 지연 없이 RPC 호출 90% 절감 & 비용 최적화", "Slashes RPCs by 90% without user-noticeable lag")}</li>
-                    </ul>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        with wp_c3:
-            st.markdown(
-                f"""
-                <div style="background-color: #1a1e24; border: 1px solid #69f0ae; border-radius: 8px; padding: 12px 14px; height: 100%;">
-                    <span style="font-weight: 700; color: #69f0ae; font-size: 0.95em;">🟢 {tr("패턴 C: 벌크 데이터 파이프라인 (ETL)", "Pattern C: Bulk Pipeline (ETL)")}</span>
-                    <ul style="color: #cfd8dc; font-size: 0.84em; margin: 8px 0 0 14px; line-height: 1.5;">
-                        <li><strong>{tr("적용", "Use Case")}</strong>: {tr("분산 모델 텔레메트리, 대용량 로그 수집, BigQuery 적재", "Model telemetry, massive logs, DW ETL")}</li>
-                        <li><code>max_messages</code>: <strong>1,000개</strong> (서버 하드 리밋)</li>
-                        <li><code>max_bytes</code>: <strong>9.0MB ~ 9.5MB</strong> (오버헤드 마진)</li>
-                        <li><code>max_latency</code>: <strong>100ms ~ 500ms</strong></li>
-                        <li><strong>{tr("특징", "Key Point")}</strong>: {tr("전송 바이트 및 압축 효율 극대화, 1KB 올림 완벽 무력화", "Max bytes/compression efficiency, zero 1KB penalty")}</li>
-                    </ul>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        st.markdown(
-            f"""
-            #### 3. {tr("프로덕션 운영 시 필수 4대 체크리스트", "Top 4 Production Operation Checklists")}
-            • <strong>1. 10MB 한도 오버헤드 주의 (RequestByteThreshold)</strong>: Pub/Sub 서버의 물리 한도는 정확히 <code>10,000,000 바이트</code>입니다. 바이트 임계치를 정확히 10MB로 설정하면 gRPC 프레임/메타데이터 오버헤드로 인해 간헐적으로 <code>INVALID_ARGUMENT</code> 오류가 발생할 수 있습니다. 반드시 <strong>8MB ~ 9.5MB</strong> 사이로 안전 마진을 두어야 합니다.<br>
-            • <strong>2. FlowControl 설정 누락 시 OOM (가장 흔한 장애 요인)</strong>: 기본 설정(<code>LimitExceededBehavior.IGNORE</code>) 상태에서는 네트워크 일시 장애나 Pub/Sub 지연 시 발행 미완료 Future 객체들이 힙 메모리에 무한정 쌓여 <strong>OOM(Out Of Memory)</strong>으로 서비스가 다운됩니다. 반드시 <code>BLOCK</code> 또는 예외를 발생시키는 <code>ERROR</code> 전략을 사용하세요.<br>
-            • <strong>3. Graceful Shutdown 구현</strong>: 프로세스 종료 시 버퍼에 남아있는 메시지가 유실되지 않도록 애플리케이션 종료 훅(<code>atexit</code> 또는 Java ShutdownHook)에서 <code>futures.wait()</code> / <code>publisher.shutdown()</code> 및 <code>awaitTermination()</code>을 명시적으로 호출해야 합니다.<br>
-            • <strong>4. Ordering Key 사용 시 주의점</strong>: <code>enable_message_ordering = True</code> 설정 시 동일한 Ordering Key를 가진 메시지는 순서대로 발행됩니다. 단, 앞선 배치가 실패하면 동일 키의 후속 메시지가 블록되므로 실패 처리에 주의해야 합니다.
-            """,
-            unsafe_allow_html=True,
-        )
+    st.markdown(f"#### ⚠️ {tr('프로덕션 운영 시 주의사항 (Watch-out)', 'Production Operational Watch-outs')}")
+    watchout_df = pd.DataFrame(
+        {
+            tr("항목", "Item"): [
+                tr("비동기 Future 처리", "Async Future Handling"),
+                tr("Graceful Shutdown", "Graceful Shutdown"),
+                tr("Ordering Key 사용 시", "Ordering Key Usage"),
+            ],
+            tr("점검 포인트 및 권장 조치", "Checkpoints & Recommended Actions"): [
+                tr(
+                    "publish() 호출 시 즉시 전송되지 않고 Future를 반환하므로, 반드시 콜백(Callback)을 등록하여 전송 실패/에러를 핸들링해야 합니다.",
+                    "publish() returns a Future immediately; you must register callbacks to handle transmission failures/errors.",
+                ),
+                tr(
+                    "애플리케이션 종료 시 Publisher 클라이언트를 반드시 shutdown() 또는 버퍼 플러시(awaitTermination)하여 메모리에 남아있는 배치가 유실되지 않도록 해야 합니다.",
+                    "On application exit, ensure publisher.shutdown() or buffer flushing (awaitTermination) is invoked to prevent dropping queued messages.",
+                ),
+                tr(
+                    "메시지 순서 보장(OrderingKey)을 활성화한 경우, 특정 키에 장애가 발생하면 해당 키의 후속 배치가 블로킹되므로 재시도 정책과 에러 핸들링을 별도로 분리해야 합니다.",
+                    "When OrderingKey is enabled, a failure on a specific key blocks all subsequent batches for that key; separate retry policies and resume_publish handling are essential.",
+                ),
+            ],
+        }
+    ).set_index(tr("항목", "Item"))
+    st.dataframe(watchout_df, use_container_width=True)
 
     st.markdown("---")
     st.markdown(f"### 🛡️ 3. {tr('Proto-First 거버넌스 & Dead Letter Queue (DLQ) 격리', 'Proto-First Governance & Dead Letter Queue (DLQ) Quarantine')}")
