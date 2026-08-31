@@ -1188,7 +1188,7 @@ with tab5:
 
     v_col1, v_col2 = st.columns(2)
     with v_col1:
-        st.markdown(f"#### 1. {tr('사전 점검 & IAM 서비스 계정 권한', 'Pre-flight & IAM Service Account')}")
+        st.markdown(f"#### 1. {tr('인프라 프로비저닝 & IAM 서비스 계정 권한 점검', 'Infra Provisioning & IAM Service Agent Check')}")
         st.info(
             """
         **Pub/Sub Service Agent**: `service-PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com`

@@ -394,33 +394,9 @@ for attempt in range(1, 6):
 
 실제 Google Cloud 프로젝트(`pub-sub-kamo`)에서 5대 아키텍처 항목을 직접 배포하고 검증할 때 사용하는 실전 가이드입니다.
 
-### 1. 사전 권한 점검 (Pre-requisites & IAM)
-Pub/Sub이 **Dead Letter Topic으로 메시지를 우회 격리**하고 **BigQuery로 Zero-ETL 스트리밍 쓰기**를 수행하려면 Google 관리형 Pub/Sub 서비스 에이전트의 IAM 권한이 필수입니다.
+### 1. 인프라 프로비저닝 (Setup Infrastructure)
+> **💡 사전 안내**: Pub/Sub 서비스 에이전트에 Dead Letter Topic 및 구독에 대한 IAM 권한을 바인딩하려면, 먼저 대상 리소스(토픽, 구독, GCS 버킷, BigQuery 테이블)가 프로젝트 상에 생성되어 있어야 합니다.
 
-```bash
-PROJECT_ID="pub-sub-kamo"
-PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format="value(projectNumber)")
-PUBSUB_SA="service-${PROJECT_NUMBER}@gcp-sa-pubsub.iam.gserviceaccount.com"
-
-# 1. Dead Letter Topic 발행 권한
-gcloud pubsub topics add-iam-policy-binding pubsub-demo-dlq-topic \
-  --member="serviceAccount:${PUBSUB_SA}" \
-  --role="roles/pubsub.publisher"
-
-# 2. 메인 구독 메시지 확인(Ack) 권한
-gcloud pubsub subscriptions add-iam-policy-binding pubsub-demo-stream-sub \
-  --member="serviceAccount:${PUBSUB_SA}" \
-  --role="roles/pubsub.subscriber"
-
-# 3. BigQuery 테이블 쓰기 권한 (Zero-ETL)
-gcloud projects add-iam-policy-binding ${PROJECT_ID} \
-  --member="serviceAccount:${PUBSUB_SA}" \
-  --role="roles/bigquery.dataEditor"
-```
-
----
-
-### 2. 인프라 프로비저닝 (Setup Infrastructure)
 ```bash
 # GCP 인프라 일괄 프로비저닝 (Topics, Subscriptions, GCS Bucket, BigQuery Dataset & Table)
 .venv/bin/python3 scripts/setup_infra.py --project_id pub-sub-kamo
@@ -437,6 +413,32 @@ gcloud projects add-iam-policy-binding ${PROJECT_ID} \
 ✓ Created BigQuery Table: pub-sub-kamo.pubsub_demo_analytics.streaming_events
 ✓ Created BigQuery Zero-ETL Subscription: projects/pub-sub-kamo/subscriptions/pubsub-demo-bq-sub
 === Infrastructure Provisioning Completed Successfully ===
+```
+
+---
+
+### 2. 사전 권한 점검 및 IAM 설정 (Pre-requisites & IAM)
+인프라 리소스가 생성된 후, Pub/Sub이 **Dead Letter Topic(`pubsub-demo-dlq-topic`)으로 메시지를 우회 격리**하고 **BigQuery로 Zero-ETL 스트리밍 쓰기**를 수행할 수 있도록 Google 관리형 Pub/Sub 서비스 에이전트에 필수 IAM 역할을 부여합니다.
+
+```bash
+PROJECT_ID="pub-sub-kamo"
+PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format="value(projectNumber)")
+PUBSUB_SA="service-${PROJECT_NUMBER}@gcp-sa-pubsub.iam.gserviceaccount.com"
+
+# 1. Dead Letter Topic 발행 권한 부여
+gcloud pubsub topics add-iam-policy-binding pubsub-demo-dlq-topic \
+  --member="serviceAccount:${PUBSUB_SA}" \
+  --role="roles/pubsub.publisher"
+
+# 2. 메인 구독 메시지 확인(Ack) 권한 부여
+gcloud pubsub subscriptions add-iam-policy-binding pubsub-demo-stream-sub \
+  --member="serviceAccount:${PUBSUB_SA}" \
+  --role="roles/pubsub.subscriber"
+
+# 3. BigQuery 테이블 쓰기 권한 부여 (Zero-ETL)
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member="serviceAccount:${PUBSUB_SA}" \
+  --role="roles/bigquery.dataEditor"
 ```
 
 ---
