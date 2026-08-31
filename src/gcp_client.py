@@ -13,7 +13,7 @@ import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import ClassVar
+from typing import Any, ClassVar
 
 
 class GCPMode(str, Enum):
@@ -131,18 +131,32 @@ class MockGCPClient(GCPClientInterface):
 class LiveGCPClient(GCPClientInterface):
     """Google Cloud 공식 Python SDK(pubsub_v1, storage)를 사용하는 실제 클라우드 통신 클라이언트."""
 
-    def __init__(self, project_id: str):
+    def __init__(self, project_id: str, batch_settings: Any | None = None):
+        """LiveGCPClient를 초기화합니다.
+        
+        Args:
+            project_id: 대상 GCP 프로젝트 ID
+            batch_settings: 1KB 최소 과금 우회 및 처리량 극대화를 위한 pubsub_v1.types.BatchSettings 인스턴스
+        """
         super().__init__(project_id=project_id, mode=GCPMode.LIVE)
         self._publisher = None
         self._storage_client = None
+        self.batch_settings = batch_settings
 
     @property
     def publisher(self):
-        """필요 시점에 Google Cloud Pub/Sub PublisherClient를 지연 로딩(Lazy initialization)합니다."""
+        """필요 시점에 Google Cloud Pub/Sub PublisherClient를 지연 로딩(Lazy initialization)합니다.
+        
+        1KB 최소 과금 크기 우회를 위한 BatchSettings(max_messages, max_bytes, max_latency)가
+        지정된 경우 클라이언트에 주입합니다.
+        """
         if self._publisher is None:
             from google.cloud import pubsub_v1
 
-            self._publisher = pubsub_v1.PublisherClient()
+            kwargs = {}
+            if self.batch_settings is not None:
+                kwargs["batch_settings"] = self.batch_settings
+            self._publisher = pubsub_v1.PublisherClient(**kwargs)
         return self._publisher
 
     @property

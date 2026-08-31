@@ -20,6 +20,7 @@ if str(ROOT_DIR) not in sys.path:
 import pandas as pd
 import streamlit as st
 
+from src.batch_billing import BatchBillingOptimizer
 from src.consumer import DualPathConsumer
 from src.dlq import DLQManager
 from src.format_benchmark import DataFormatBenchmark
@@ -207,9 +208,10 @@ with tab1:
         2. **StreamingPull로의 전환을 통한 지연 시간 88% 절감**:
            - 기존 HTTP/gRPC 동기식 배치 폴링 루프의 연결 핸드셰이크와 대기 오버헤드(~95ms) 전면 제거.
            - 영구적인 양방향 gRPC 스트림 채널을 유지하여 브로커가 메시지를 도착 즉시 푸시 (~11ms 달성).
-        3. **데이터 전송 포맷 최적화 (Binary Schema & gRPC) & DLQ 거버넌스**:
+        3. **데이터 전송 포맷 & 배치 최적화 (Binary Schema & BatchSettings) & DLQ 거버넌스**:
            - **바이너리 스키마(Protobuf)**: 비효율적인 JSON 필드명을 제거하고 1바이트 Varint 태그로 압축 인코딩.
            - **gRPC 전송 (REST Base64 +33% 패널티 회피)**: REST API의 Base64 강제 인코딩 오버헤드를 없애고 순수 바이너리 전송.
+           - **1KB 최소 과금 단위 우회 (BatchSettings)**: 1,000B 미만 미세 메시지 단건 발행 시 발생하는 10배 과금 팽창을 클라이언트 배치로 방어.
            - **Zstd 결합**: 단일 페이로드당 최극소화 바이트 볼륨 달성.
            - **DLQ 서킷 브레이커**: 스키마 오류/포이즌 필 발생 시 5회 재시도 후 Dead Letter Topic(`pubsub-demo-dlq-topic`)으로 안전 격리.
         """
@@ -226,9 +228,10 @@ with tab1:
         2. **88% Latency Reduction via gRPC StreamingPull**:
            - Replaces legacy HTTP/gRPC synchronous polling loops with persistent bidirectional gRPC streams.
            - Sub-15ms delivery for real-time model telemetry, training step sync, and agent logs.
-        3. **Data Format Optimization (Binary Schema & gRPC) & DLQ Governance**:
+        3. **Data Format & Batch Optimization (Binary Schema & BatchSettings) & DLQ Governance**:
            - **Binary Schema (Protobuf)**: Eliminates JSON string field keys using 1-byte Varint tags.
            - **Pure gRPC Wire (Bypassing REST +33% Base64 Penalty)**: Prevents REST Base64 data inflation.
+           - **1KB Billing Unit Bypass (BatchSettings)**: Prevents 10x cost traps on <1KB small events via client-side batching.
            - **Zstd Synergy**: Reaches the minimum possible byte volume per payload.
            - **5-Retry DLQ Isolation**: Safely quarantines poison pills into Dead Letter Topic preventing blocking.
         """
@@ -553,7 +556,113 @@ with tab4:
     )
 
     st.markdown("---")
-    st.markdown(f"### 🛡️ 2. {tr('Proto-First 거버넌스 & Dead Letter Queue (DLQ) 격리', 'Proto-First Governance & Dead Letter Queue (DLQ) Quarantine')}")
+    st.markdown(f"### 💰 2. {tr('1KB 최소 과금 단위(Billing Unit) 우회: 클라이언트 측 배치(Batching) 시뮬레이터', 'Bypassing 1KB Minimum Billing Unit: Client-Side Batching Simulator')}")
+
+    st.markdown(
+        f"""
+        <div class="doc-banner" style="border-left-color: #F57F17;">
+            <strong>⚠️ {tr("Google Cloud Pub/Sub 1KB 최소 과금 규칙 및 10배 비용 낭비 위험", "Google Cloud Pub/Sub 1KB Minimum Billing Unit & 10x Cost Trap")}:</strong><br>
+            • <strong>{tr("1KB 최소 과금 규칙", "1KB Minimum Rule")}</strong>: {tr("Pub/Sub은 개별 메시지 크기가 1,000바이트(1KB) 미만이더라도 무조건 최소 1,000바이트로 올림하여 과금합니다.", "Pub/Sub rounds up message volume to a minimum of 1,000 bytes (1KB) per message.")}<br>
+            • <strong>{tr("비배치 시 최대 10배 비용 발생", "Up to 10x Cost Penalty Without Batching")}</strong>: {tr("예를 들어 100바이트짜리 메시지 10개를 각각 단일 요청으로 보내면 실제 데이터는 1KB이지만 과금은 10KB(10,000바이트)로 처리되어 <strong>무려 10배(1,000%)의 요금 폭탄</strong>이 발생합니다.", "Sending 10 messages of 100 bytes individually transfers 1KB but bills 10KB (10,000 bytes) — an unnecessary 10x (1,000%) cost penalty!")}<br>
+            • <strong>{tr("최적화 방안 (BatchSettings)", "Optimization via BatchSettings")}</strong>: {tr("클라이언트 라이브러리의 <code>BatchSettings(max_messages, max_bytes, max_latency)</code>를 튜닝하여 여러 메시지를 하나의 Publish 요청으로 묶어서 전송하면 총 데이터 크기가 합산(10개 * 100B = 1,000B)되어 <strong>과금 단위도 1KB로 축소</strong>됩니다. 허용 지연 시간(예: 50ms) 내에서 튜닝하면 지연 영향 없이 최대 90% 비용을 절감합니다.", "Configuring <code>BatchSettings</code> bundles small messages into a single PublishRequest, aggregating byte volume (10 * 100B = 1KB) so you are billed for only 1KB. Tuning within latency budget (e.g. 50ms) slashes up to 90% cost with zero noticeable delay.")}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    bc1, bc2 = st.columns([1, 2])
+    with bc1:
+        st.markdown(f"#### {tr('배치 및 메시지 튜닝 파라미터', 'Batch & Message Parameters')}")
+        b_msg_size = st.slider(
+            tr("개별 메시지 크기 (바이트)", "Individual Message Size (Bytes)"),
+            min_value=50,
+            max_value=1500,
+            value=100,
+            step=50,
+            help="1,000바이트 미만의 미세 메시지일수록 배치 효과가 극대화됩니다.",
+        )
+        b_msg_count = st.select_slider(
+            tr("월간 메시지 발행 건수", "Monthly Message Volume"),
+            options=[1_000_000, 5_000_000, 10_000_000, 50_000_000, 100_000_000, 1_000_000_000],
+            value=10_000_000,
+            format_func=lambda x: f"{x:,} 건 ({x//1_000_000}M)" if x < 1_000_000_000 else "10억 건 (1B)",
+        )
+        b_batch_size = st.slider(
+            tr("배치 묶음 메시지 수 (max_messages)", "Batch Size (max_messages)"),
+            min_value=1,
+            max_value=100,
+            value=10,
+            step=1,
+            help="1이면 비배치(단일 전송), 10 이상이면 1KB 과금 단위 최적화 달성",
+        )
+        b_latency_ms = st.selectbox(
+            tr("허용 레이턴시 버퍼 (max_latency)", "Allowed Latency Buffer (max_latency)"),
+            options=[10, 20, 50, 100],
+            index=2,
+            format_func=lambda x: f"{x} ms (지연 허용치)",
+        )
+
+        billing_calc = BatchBillingOptimizer.calculate_billing(
+            message_size_bytes=b_msg_size,
+            message_count=b_msg_count,
+            batch_size=b_batch_size,
+        )
+
+    with bc2:
+        st.markdown(f"#### {tr('과금 팽창 배수 및 절감액 실시간 분석', 'Cost Inflation & Savings Analysis')}")
+        bm1, bm2, bm3, bm4 = st.columns(4)
+        bm1.metric(
+            tr("실제 데이터 크기", "Actual Data Volume"),
+            f"{billing_calc.actual_data_bytes / (1024**2):.1f} MB" if billing_calc.actual_data_bytes < 1024**3 else f"{billing_calc.actual_data_bytes / (1024**3):.2f} GB",
+            help="실제 네트워크로 전송되는 순수 페이로드 바이트",
+        )
+        bm2.metric(
+            tr("비배치 과금 크기", "Unbatched Billed Volume"),
+            f"{billing_calc.unbatched_billed_bytes / (1024**2):.1f} MB" if billing_calc.unbatched_billed_bytes < 1024**3 else f"{billing_calc.unbatched_billed_bytes / (1024**3):.2f} GB",
+            delta=f"{billing_calc.cost_inflation_ratio}x {tr('비용 팽창', 'Inflation')}",
+            delta_color="inverse",
+            help="개별 메시지마다 최소 1,000바이트로 올림되어 청구되는 볼륨",
+        )
+        bm3.metric(
+            tr("배치 적용 과금 크기", "Batched Billed Volume"),
+            f"{billing_calc.batched_billed_bytes / (1024**2):.1f} MB" if billing_calc.batched_billed_bytes < 1024**3 else f"{billing_calc.batched_billed_bytes / (1024**3):.2f} GB",
+            delta=f"-{billing_calc.savings_percentage:.1f}%",
+            help="배치로 묶여 전송되어 1KB 단위 올림이 배치 레벨로 완화된 과금 볼륨",
+        )
+        bm4.metric(
+            tr("비배치 비용 배수", "Inflation Multiplier"),
+            f"{billing_calc.cost_inflation_ratio:.1f}x",
+            delta=f"-${billing_calc.unbatched_cost_usd - billing_calc.batched_cost_usd:.2f} USD" if billing_calc.unbatched_cost_usd > billing_calc.batched_cost_usd else "0 USD",
+            delta_color="normal",
+            help="비배치 대비 배치 적용 시의 비용 절감 효과",
+        )
+
+        batch_chart_df = pd.DataFrame(
+            {
+                tr("과금 구분", "Category"): [
+                    tr("1. 실제 데이터 크기", "1. Actual Data Volume"),
+                    tr("2. 비배치 과금 볼륨 (1KB 올림 낭비)", "2. Unbatched Billed (1KB Penalty)"),
+                    tr("3. 배치 적용 과금 볼륨 (BatchSettings)", "3. Batched Billed (BatchSettings)"),
+                ],
+                tr("과금 바이트 (MB)", "Billed Volume (MB)"): [
+                    round(billing_calc.actual_data_bytes / (1024**2), 2),
+                    round(billing_calc.unbatched_billed_bytes / (1024**2), 2),
+                    round(billing_calc.batched_billed_bytes / (1024**2), 2),
+                ],
+            }
+        ).set_index(tr("과금 구분", "Category"))
+        st.bar_chart(batch_chart_df)
+
+    st.markdown(f"#### 💻 {tr('프로덕션 권장 BatchSettings 코드 구성', 'Recommended Production BatchSettings Code')}")
+    snippet_code = BatchBillingOptimizer.get_batch_settings_code_snippet(
+        max_messages=b_batch_size,
+        max_bytes_mb=1,
+        max_latency_ms=b_latency_ms,
+    )
+    st.code(snippet_code, language="python")
+
+    st.markdown("---")
+    st.markdown(f"### 🛡️ 3. {tr('Proto-First 거버넌스 & Dead Letter Queue (DLQ) 격리', 'Proto-First Governance & Dead Letter Queue (DLQ) Quarantine')}")
 
     d_col1, d_col2 = st.columns([1, 2])
     with d_col1:

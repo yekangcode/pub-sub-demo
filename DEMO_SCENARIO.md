@@ -12,7 +12,7 @@
 | **1** | **아키텍처 인트로** | Anthropic 아키텍처 3대 핵심 축 및 파이프라인 흐름 소개 | 3분 |
 | **2** | **심층 분석 1: 이중 경로 수집 & Zstd 압축** | <8MB Fast Path vs >=8MB GCS 오프로드 및 투명한 복원 | 5분 |
 | **3** | **심층 분석 2: 지연 시간 88% 절감 (StreamingPull)** | 동기식 폴링(~95ms) vs 양방향 gRPC 스트리밍(~11ms) 실측 비교 | 5분 |
-| **4** | **심층 분석 3: Proto-First & DLQ 격리** | 포이즌 필 인위적 주입, 5회 재시도 차단 및 Dead Letter Queue 격리 | 5분 |
+| **4** | **심층 분석 3: 포맷 최적화 & 1KB 과금 우회 & DLQ** | 바이너리 스키마(gRPC vs REST), BatchSettings(10배 과금 방지), 5회 DLQ 격리 | 6분 |
 | **5** | **GCP 인프라 & BigQuery Zero-ETL (옵션)** | `pub-sub-kamo` 실환경 프로비저닝 및 무중단 파이프라인 정리 | 5분 |
 
 ---
@@ -256,7 +256,55 @@ print(f'\n🎯 월 10억 건 발행 시 절감량: {sav[\"saved_tb_per_1b\"]} TB
 
 ---
 
-### 🛡️ 세션 4-B: Proto-First 거버넌스 & Dead Letter Queue (DLQ) 격리
+### 💰 세션 4-B: 1KB 최소 과금 크기(Billing Unit) 우회: 클라이언트 측 배치(Batching) 적용
+
+#### 1. 문제 배경 및 최적화 원리
+1. **Google Cloud Pub/Sub 1KB 최소 과금 규칙**:
+   - Pub/Sub은 개별 메시지 크기가 1KB(1,000바이트) 미만이더라도 **무조건 최소 1,000바이트(1KB)로 반올림하여 과금**합니다.
+   - 예: 100바이트짜리 미세 메시지 10개를 각각 단일 요청으로 보내면:
+     * 실제 전송 데이터: **1KB (1,000바이트)**
+     * Pub/Sub 과금 처리: **10KB (10,000바이트)**
+     * 결과: **무려 10배(1,000%)의 불필요한 과금 낭비 발생!**
+2. **최적화 방안: 클라이언트 라이브러리 `BatchSettings` 튜닝**:
+   - 메시지를 단건으로 즉시 발행하지 않고, 비즈니스 허용 지연 시간(Latency Budget: 예 50ms) 내에서 `BatchSettings(max_messages, max_bytes, max_latency)`를 구성하여 여러 메시지를 하나의 `PublishRequest`로 묶어서 전송합니다.
+   - 메시지 10개를 하나로 묶어 전송하면 총 데이터 크기가 1KB(1,000바이트)로 처리되어 **과금 단위도 1KB로 정상화(최대 90% 비용 절감)**됩니다.
+
+#### 2. 발표자 액션 & 시연
+1. Streamlit 대시보드 **`🛡️ 3. 데이터 포맷 최적화 & DLQ`** 탭의 **`💰 2. 1KB 최소 과금 단위 우회 시뮬레이터`** 섹션으로 스크롤.
+2. `개별 메시지 크기`를 `100B`, `월간 메시지 발행 건수`를 `10,000,000건(10M)`으로 설정.
+3. `배치 묶음 메시지 수 (max_messages)`를 `1`(비배치)에서 `10`(배치)으로 이동하며 우측 메트릭의 변화 시연:
+   - `비배치 과금 크기`: 9.54 GB (10.0x 비용 팽창)
+   - `배치 적용 과금 크기`: 0.95 GB (**-90.0% 절감!**)
+4. 하단의 `프로덕션 권장 BatchSettings 코드 구성`을 가리키며 실제 Python 프로덕션 적용법 설명.
+
+#### 3. CLI 배치 과금 시뮬레이션 명령어
+```bash
+.venv/bin/python3 -c "
+from src.batch_billing import BatchBillingOptimizer
+
+calc = BatchBillingOptimizer.calculate_billing(message_size_bytes=100, message_count=10_000_000, batch_size=10)
+
+print('=== Pub/Sub 1KB 최소 과금 단위 및 BatchSettings 분석 ===')
+print(f'개별 메시지 크기: {calc.message_size_bytes} 바이트 | 총 메시지 수: {calc.message_count:,} 건')
+print(f'1. 실제 순수 데이터 크기:   {calc.actual_data_bytes / (1024**2):.2f} MB')
+print(f'2. 비배치 과금 청구 크기:   {calc.unbatched_billed_bytes / (1024**2):.2f} MB (최소 1,000B 올림 적용)')
+print(f'3. 배치(10개) 과금 청구 크기: {calc.batched_billed_bytes / (1024**2):.2f} MB (1KB 단위로 합산)')
+print(f'🎯 과금 팽창 배수: {calc.cost_inflation_ratio}배 낭비 -> 배치 적용 시 {calc.savings_percentage}% 비용 절감!')
+"
+```
+**출력 결과**:
+```text
+=== Pub/Sub 1KB 최소 과금 단위 및 BatchSettings 분석 ===
+개별 메시지 크기: 100 바이트 | 총 메시지 수: 10,000,000 건
+1. 실제 순수 데이터 크기:   953.67 MB
+2. 비배치 과금 청구 크기:   9536.74 MB (최소 1,000B 올림 적용)
+3. 배치(10개) 과금 청구 크기: 953.67 MB (1KB 단위로 합산)
+🎯 과금 팽창 배수: 10.0배 낭비 -> 배치 적용 시 90.0% 비용 절감!
+```
+
+---
+
+### 🛡️ 세션 4-C: Proto-First 거버넌스 & Dead Letter Queue (DLQ) 격리
 
 #### 1. 배경 설명
 * 수천 명의 엔지니어와 에이전트가 이벤트를 발행할 때, 단 하나의 잘못된 스키마 변경이나 손상된 바이너리(Poison Pill)가 전체 파이프라인을 멈추게 할 수 있습니다(Head-of-Line Blocking).
