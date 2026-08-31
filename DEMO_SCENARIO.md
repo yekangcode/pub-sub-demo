@@ -511,14 +511,15 @@ Starting End-to-End Verification on Project: pub-sub-kamo (Mode: LIVE)
 
 ### 4. BigQuery 및 GCS 개별 리소스 CLI 확인
 
-#### ① BigQuery 실시간 적재 데이터 확인 (Zero-ETL)
+#### ① BigQuery 실시간 적재 데이터 원시 조회 (Zero-ETL)
 ```bash
 bq query --use_legacy_sql=false '
 SELECT
   subscription_name,
   message_id,
   publish_time,
-  attributes
+  data,
+  TO_JSON_STRING(attributes) as attributes
 FROM
   `pub-sub-kamo.pubsub_demo_analytics.streaming_events`
 ORDER BY
@@ -527,12 +528,51 @@ LIMIT 5;
 '
 ```
 
-#### ② GCS 오프로드 페이로드 객체 확인
+#### ② BigQuery Zstd 압축 해제 & Protobuf 역직렬화 실시간 분석 (Before vs After)
+BigQuery `data` 컬럼에 저장된 Zstd 압축 바이너리를 실시간으로 압축 해제하고 Protocol Buffers 스키마(`StreamingEvent`)로 복원하여 원본 내용 및 용량 절감률을 정밀 비교합니다.
+```bash
+# 실시간 Zstd 압축 해제 및 Protobuf 역직렬화 분석 실행
+.venv/bin/python3 scripts/inspect_bq_payloads.py --project_id pub-sub-kamo --limit 5
+```
+**기대 출력**:
+```text
+================================================================================
+🔍 [BigQuery Zero-ETL] Zstd 압축 해제 & Protobuf 역직렬화 실시간 분석기
+• 대상 프로젝트: pub-sub-kamo
+• 대상 테이블:   pub-sub-kamo.pubsub_demo_analytics.streaming_events
+• 조회 건수:     최근 5건
+================================================================================
+📡 BigQuery 테이블 쿼리 실행 중...
+
+--------------------------------------------------------------------------------
+[1/5] 📨 Message ID: 21519231965269592 | 수집 시각: 2026-08-31 07:34:15 UTC
+--------------------------------------------------------------------------------
+📦 [BEFORE: BigQuery 저장 원시 상태]
+  • 저장된 바이너리 크기: 224 Bytes
+  • Zstd Magic 헤더 일치: ✓ 감지됨 (0x28 0xB5 0x2F 0xFD)
+  • Base64 인코딩 원문:   Cg1ldnQtc21hbGwtMDAxEg5zZXJ2aW5nLWNsYXVkZRowKLUv/WBAADUBAOBDbGF1ZGUtRmFzdC1...
+  • Hex 덤프 (앞 32B):    0a 0d 65 76 74 2d 73 6d 61 6c 6c 2d 30 30 31 12 0e 73 65 72 76 69 6e 67 2d
+
+🔓 [AFTER: Zstd 압축 해제 & Protobuf 역직렬화 복원 결과]
+  • Protocol Buffers:   ✓ 스키마 정상 역직렬화 (StreamingEvent)
+  • Event ID / Source:  evt-small-001  (출처: serving-claude)
+  • Schema Fingerprint: sha256-29cf2454e35404c9
+  • Pod 환경 메타데이터: {'csp': 'gcp', 'node': 'kangrenee.c.googlers.com', 'namespace': 'default', 'job': 'streaming-publisher'}
+  • 페이로드 압축 해제: 48B -> 320B (85.0% 용량 절감)
+  • 복원된 원본 텍스트:
+    "Claude-Fast-Path-Prompt-Payload-Claude-Fast-Path-Prompt-Payload-Claude-Fast-Path-Prompt-Payload-..."
+
+================================================================================
+✓ BigQuery Zstd + Protobuf 페이로드 역직렬화 검증이 완료되었습니다.
+================================================================================
+```
+
+#### ③ GCS 오프로드 페이로드 객체 확인
 ```bash
 gcloud storage ls -l gs://pub-sub-kamo-payloads/payloads/
 ```
 
-#### ③ DLQ 격리 토픽에 전송된 손상 메시지 풀링 확인
+#### ④ DLQ 격리 토픽에 전송된 손상 메시지 풀링 확인
 ```bash
 gcloud pubsub subscriptions pull pubsub-demo-dlq-sub --project=pub-sub-kamo --auto-ack --limit=5
 ```

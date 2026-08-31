@@ -31,6 +31,7 @@ from src.gcp_client import GCPClientFactory, GCPMode
 from src.generator import SyntheticWorkloadGenerator
 from src.metrics import MetricsCollector
 from src.publisher import DualPathPublisher
+from src.payload_inspector import PayloadInspector
 from src.workers.streaming_worker import StreamingPullWorker
 from src.workers.sync_worker import SyncPullWorker
 
@@ -1212,41 +1213,176 @@ with tab5:
                     )
 
     with v_col2:
-        st.markdown(f"#### 2. {tr('BigQuery Zero-ETL 스트리밍 실시간 조회', 'BigQuery Zero-ETL Live Ingestion Query')}")
+        st.markdown(f"#### 2. {tr('BigQuery Zero-ETL 스트리밍 실시간 조회 & 페이로드 역직렬화', 'BigQuery Zero-ETL Live Ingestion & Payload Inspection')}")
         st.write(
             tr(
-                "Pub/Sub이 Dataflow 없이 BigQuery 테이블로 직접 적재한 데이터를 확인합니다.",
-                "Inspect events streamed directly into BigQuery without Dataflow.",
+                "Dataflow 없이 Pub/Sub 브로커가 BigQuery로 직접 수집한 Zstd 압축 Protobuf 바이너리를 실시간 조회하고 원본 내용으로 역직렬화합니다.",
+                "Query Zstd-compressed Protobuf payloads streamed directly into BigQuery without Dataflow and decompress them live.",
             )
         )
-        if st.button(tr("🔍 BigQuery 테이블 쿼리 (최근 10건)", "🔍 Query BigQuery Table (Latest 10)"), use_container_width=True):
+        if st.button(tr("🔍 BigQuery 쿼리 및 Zstd/Protobuf 전·후 심층 분석", "🔍 Query BigQuery & Inspect Zstd/Protobuf Before vs After"), use_container_width=True):
+            inspector = PayloadInspector()
+            inspected_list = []
+
             if gcp_mode == GCPMode.LIVE:
                 try:
                     from google.cloud import bigquery
 
                     bq = bigquery.Client(project=project_id)
-                    df_bq = bq.query(
-                        f"SELECT subscription_name, message_id, publish_time, attributes "
-                        f"FROM `{project_id}.pubsub_demo_analytics.streaming_events` "
-                        f"ORDER BY publish_time DESC LIMIT 10"
-                    ).to_dataframe()
-                    st.dataframe(df_bq, use_container_width=True)
+                    query = f"""
+                    SELECT
+                        subscription_name,
+                        message_id,
+                        publish_time,
+                        data,
+                        TO_JSON_STRING(attributes) AS attr_str
+                    FROM `{project_id}.pubsub_demo_analytics.streaming_events`
+                    ORDER BY publish_time DESC
+                    LIMIT 10
+                    """
+                    job = bq.query(query)
+                    for row in job:
+                        item = inspector.inspect_raw(
+                            raw_data=row.data,
+                            attributes=row.attr_str,
+                            message_id=str(row.message_id),
+                            publish_time=str(row.publish_time),
+                        )
+                        inspected_list.append(item)
+                    st.session_state["bq_inspected"] = inspected_list
                 except Exception as e:  # noqa: BLE001
                     st.error(f"BigQuery Query Error: {e}")
             else:
-                mock_bq_data = pd.DataFrame(
-                    [
-                        {
-                            "subscription_name": "projects/pub-sub-kamo/subscriptions/pubsub-demo-bq-sub",
-                            "message_id": f"msg-mock-{i:03d}",
-                            "publish_time": time.strftime("%Y-%m-%d %H:%M:%S"),
-                            "attributes": '{"event_type": "text_prompt", "content-encoding": "zstd"}',
-                        }
-                        for i in range(1, 6)
-                    ]
-                )
-                st.dataframe(mock_bq_data, use_container_width=True)
-                st.caption(tr("• 모의 샌드박스 환경의 시뮬레이션 BigQuery 데이터입니다.", "• Simulated BigQuery records in Mock Sandbox."))
+                from src.compression import CompressionManager
+                from src.proto_gen import streaming_event_pb2
+
+                cm = CompressionManager(level=3)
+                sample_prompts = [
+                    (b"Claude-Fast-Path-Prompt-Payload-" * 10, "evt-small-001", "serving-claude"),
+                    (b"Anthropic-Production-Serving-Inference-Trace-Sample-" * 8, "inference-trace-002", "claude-serving-engine"),
+                    (b"Telemetry-Metrics-Payload-Worker-Node-GKE-Cluster-" * 12, "telemetry-stream-003", "gke-worker-metrics"),
+                    (b"Multimodal-Vision-Embeddings-Metadata-Stream-Payload-" * 10, "multimodal-meta-004", "vision-service"),
+                ]
+                for i, (prompt, eid, src) in enumerate(sample_prompts, 1):
+                    comp = cm.compress(prompt)
+                    evt = streaming_event_pb2.StreamingEvent(
+                        event_id=eid,
+                        source=src,
+                        payload=comp,
+                        payload_type="text/plain",
+                        timestamp_ms=int(time.time() * 1000),
+                        pod_env_vars={"node": f"gke-node-ai-gpu-{i}", "namespace": "prod-serving", "csp": "gcp"},
+                        schema_fingerprint="sha256-29cf2454e35404c9",
+                    )
+                    raw_proto = evt.SerializeToString()
+                    item = inspector.inspect_raw(
+                        raw_data=raw_proto,
+                        attributes={"content-encoding": "zstd", "event-id": eid, "path": "fast", "source": src},
+                        message_id=f"msg-mock-{i:03d}",
+                        publish_time=time.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                    )
+                    inspected_list.append(item)
+                st.session_state["bq_inspected"] = inspected_list
+
+    # ----------------- SECTION 3: BIGQUERY ZSTD & PROTOBUF DECOMPRESSION INSPECTION -----------------
+    if st.session_state.get("bq_inspected"):
+        inspected = st.session_state["bq_inspected"]
+        st.markdown("---")
+        st.markdown(
+            f"### 🔬 {tr('BigQuery 적재 데이터 Zstd 압축 해제 & Protobuf 역직렬화 심층 분석 (Before vs After)', 'BigQuery Zstd Decompression & Protobuf Deserialization Deep Dive (Before vs After)')}"
+        )
+        st.caption(
+            tr(
+                "BigQuery에 저장된 원시 바이너리(Bytes)를 Zstd 알고리즘으로 압축 해제하고 Protocol Buffers 스키마로 복원하여 압축 전/후 용량 및 원본 텍스트를 정밀 비교합니다.",
+                "Decompresses raw bytes stored in BigQuery via Zstd and deserializes Protocol Buffers to compare before/after size and payload text.",
+            )
+        )
+
+        total_stored = sum(item.raw_bytes_len for item in inspected)
+        total_restored = sum(item.uncompressed_payload_bytes for item in inspected)
+        total_comp_payloads = sum(item.compressed_payload_bytes for item in inspected)
+        avg_red = ((total_restored - total_comp_payloads) / total_restored * 100.0) if total_restored > 0 else 0.0
+
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.metric(tr("조회된 스트리밍 레코드", "Queried Records"), f"{len(inspected)}건")
+        with m2:
+            st.metric(tr("BigQuery 저장 총 크기", "Total Stored Size"), f"{total_stored:,} B", help=tr("Zstd 압축 및 Protobuf 직렬화된 실제 저장 용량", "Actual stored size in BigQuery"))
+        with m3:
+            st.metric(tr("복원된 원본 총 크기", "Total Restored Size"), f"{total_restored:,} B", help=tr("압축 해제된 순수 원본 텍스트/데이터 용량", "Total decompressed payload size"))
+        with m4:
+            st.metric(tr("평균 대역폭/용량 절감률", "Avg Data Reduction"), f"{avg_red:.1f}%", delta=f"-{avg_red:.1f}%")
+
+        # 1. Summary DataFrame
+        summary_rows = [
+            {
+                tr("메시지 ID", "Message ID"): item.message_id,
+                tr("이벤트 ID", "Event ID"): item.event_id,
+                tr("출처", "Source"): item.source,
+                tr("수집 시각", "Publish Time"): item.publish_time,
+                tr("저장 크기", "Stored Size"): f"{item.raw_bytes_len} B",
+                tr("복원 페이로드", "Restored Payload"): f"{item.uncompressed_payload_bytes} B",
+                tr("용량 절감률", "Reduction"): f"{item.reduction_percent:.1f}%",
+                tr("Zstd 압축 여부", "Zstd Header"): "✓ 감지됨" if item.is_zstd_compressed else "• 미압축",
+            }
+            for item in inspected
+        ]
+        st.dataframe(pd.DataFrame(summary_rows), use_container_width=True)
+
+        # 2. Detailed Before vs After Card
+        st.markdown(f"#### 🔍 {tr('개별 이벤트 전/후 (Before vs After) 상세 디코딩 뷰어', 'Event Before vs After Inspection Viewer')}")
+        selected_idx = st.selectbox(
+            tr("분석할 이벤트 선택", "Select Event to Inspect"),
+            range(len(inspected)),
+            format_func=lambda i: f"[{i+1}] Event: {inspected[i].event_id} | Msg: {inspected[i].message_id} | 절감률: {inspected[i].reduction_percent:.1f}%",
+        )
+        cur = inspected[selected_idx]
+
+        b_col, a_col = st.columns(2)
+        with b_col:
+            st.markdown(
+                f"<div style='border: 2px solid #ef5350; border-radius: 8px; padding: 15px; background: rgba(239, 83, 80, 0.05);'>"
+                f"<h4 style='color: #ef5350; margin-top: 0;'>📦 [BEFORE] BigQuery 적재 원본 (압축 바이너리)</h4>"
+                f"<p><b>저장된 바이너리 크기:</b> <code>{cur.raw_bytes_len} Bytes</code> (압축 페이로드: <code>{cur.compressed_payload_bytes} Bytes</code>)</p>"
+                f"<p><b>Zstd 매직 헤더:</b> <span class='badge-blue'>{'✓ 0x28 0xB5 0x2F 0xFD 일치' if cur.is_zstd_compressed else '• 미압축'}</span></p>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(f"**Base64 인코딩 원문:**")
+            st.code(cur.base64_preview, language="text")
+            st.markdown(f"**Hex 덤프 (앞 32바이트):**")
+            st.code(cur.hex_preview, language="text")
+            with st.expander(tr("원본 Pub/Sub Attributes JSON 보기", "View Raw Attributes JSON")):
+                st.json(cur.raw_attributes)
+
+        with a_col:
+            st.markdown(
+                f"<div style='border: 2px solid #66bb6a; border-radius: 8px; padding: 15px; background: rgba(102, 187, 106, 0.05);'>"
+                f"<h4 style='color: #66bb6a; margin-top: 0;'>🔓 [AFTER] Zstd 압축 해제 & Protobuf 복원 원본</h4>"
+                f"<p><b>복원된 원본 크기:</b> <code>{cur.uncompressed_payload_bytes} Bytes</code> | <b>절감률:</b> <span class='metric-badge-green'>{cur.reduction_percent:.1f}% 절감</span></p>"
+                f"<p><b>스키마 스펙:</b> <code>Protocol Buffers (StreamingEvent)</code> | SHA-256: <code>{cur.schema_fingerprint or 'N/A'}</code></p>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(f"**복원된 원본 텍스트 페이로드:**")
+            st.text_area(
+                tr("복원된 원본 내용", "Decompressed Content"),
+                value=cur.decompressed_text,
+                height=110,
+                disabled=True,
+                key=f"decomp_text_{selected_idx}",
+            )
+            with st.expander(tr("복원된 Protobuf 메타데이터 & Pod 환경변수", "Restored Protobuf Metadata & Pod Envs"), expanded=True):
+                meta_display = {
+                    "event_id": cur.event_id,
+                    "source": cur.source,
+                    "payload_type": cur.payload_type,
+                    "schema_fingerprint": cur.schema_fingerprint,
+                    "timestamp_ms": cur.timestamp_ms,
+                    "pod_env_vars": cur.pod_env_vars,
+                }
+                st.json(meta_display)
+
 
 st.markdown("---")
 st.markdown(
