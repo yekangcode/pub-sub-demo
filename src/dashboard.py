@@ -469,6 +469,86 @@ with tab4:
         unsafe_allow_html=True,
     )
 
+    st.markdown(
+        f"""
+        ### 🔍 {tr("데이터 크기 (Size) 관점의 차이: JSON vs Protobuf", "Data Size Perspective: JSON vs Protobuf")}
+
+        {tr("가장 큰 차이는 <strong>데이터 필드명의 반복 여부</strong>와 <strong>인코딩 방식</strong>에서 발생합니다.", "The primary difference arises from <strong>redundant field name repetition</strong> versus <strong>binary encoding methods</strong>.")}
+        """
+    )
+
+    c_json, c_proto = st.columns(2)
+    with c_json:
+        st.markdown(
+            f"""
+            <div style="background-color: #1a1e24; border: 1px solid #e53935; border-radius: 8px; padding: 14px 16px; margin-bottom: 10px;">
+                <span style="font-weight: 700; color: #ff5252; font-size: 1.05em;">📝 JSON ({tr("텍스트 포맷", "Text Format")})</span>
+                <p style="color: #cfd8dc; font-size: 0.9em; margin: 6px 0 0 0; line-height: 1.5;">
+                    {tr(
+                        '텍스트 기반이라 가독성은 뛰어나지만, <code>"event_id"</code>, <code>"timestamp_ms"</code>, <code>"pod_env_vars"</code>와 같은 <strong>키(Key) 문자열이 모든 단일 메시지마다 반복적으로 포함</strong>되어야 합니다. 이로 인해 불필요한 데이터가 누적되어 전체 페이로드 크기가 커집니다.',
+                        'Highly readable text format, but string keys like <code>"event_id"</code>, <code>"timestamp_ms"</code>, <code>"pod_env_vars"</code> must be <strong>redundantly repeated in every single message</strong>. This accumulates excessive metadata overhead.'
+                    )}
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        sample_json_code = '''{
+  "event_id": "evt-prod-9a2c3f81",
+  "source": "claude-serving-pod-01",
+  "timestamp_ms": 1725062400000,
+  "payload_type": "application/json",
+  "payload": "{\\"prompt\\": \\"Explain quantum computing...\\", \\"tokens\\": 256}",
+  "schema_fingerprint": "a8f5c381d9b4f620e1a3c749b567d12f345890ab",
+  "pod_env_vars": {
+    "KUBERNETES_NODE": "gke-node-pool-1-c89a",
+    "CLUSTER_REGION": "us-central1",
+    "MODEL_VERSION": "claude-3-7-sonnet"
+  }
+}'''
+        st.code(sample_json_code, language="json")
+        st.caption(tr(
+            "⚠️ 필드명 문자열 오버헤드: 총 393바이트 중 필드 키만 ~137바이트(약 35%)를 차지하여 매 전송마다 중복 낭비됨.",
+            "⚠️ String Key Overhead: Out of 393 bytes, field keys alone consume ~137 bytes (35%), repeated wastefully on every publish."
+        ))
+
+    with c_proto:
+        st.markdown(
+            f"""
+            <div style="background-color: #1a1e24; border: 1px solid #00b0ff; border-radius: 8px; padding: 14px 16px; margin-bottom: 10px;">
+                <span style="font-weight: 700; color: #40c4ff; font-size: 1.05em;">⚡ Protobuf ({tr("바이너리 스키마", "Binary Schema")})</span>
+                <p style="color: #cfd8dc; font-size: 0.9em; margin: 6px 0 0 0; line-height: 1.5;">
+                    {tr(
+                        '텍스트 필드명 대신 <strong>1바이트 크기의 숫자인 Varint 태그 번호</strong>를 사용하여 필드를 식별합니다. 이에 더해 데이터를 <strong>컴팩트한 바이너리로 인코딩</strong>하므로 구조적으로 크기가 훨씬 작습니다.',
+                        'Identifies fields using <strong>1-byte numeric Varint tags</strong> instead of text keys. Encodes all values into <strong>compact binary structures</strong>, drastically minimizing wire size.'
+                    )}
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        sample_proto_code = '''// 1. 스키마 정의 (proto/streaming_event.proto)
+syntax = "proto3";
+message StreamingEvent {
+  string event_id           = 1; // 태그 1 -> 1바이트 0x0A로 식별!
+  string source             = 2; // 태그 2 -> 1바이트 0x12로 식별!
+  bytes  payload            = 3; // 태그 3 -> 1바이트 0x1A로 식별!
+  string payload_type       = 4; // 태그 4 -> 1바이트 0x22로 식별!
+  int64  timestamp_ms       = 5; // 태그 5 -> 1바이트 0x28 + Varint 정수 압축!
+  map<string, string> pod_env_vars = 6; // 태그 6 -> 1바이트 0x32
+  string schema_fingerprint = 8; // 태그 8 -> 1바이트 0x42
+}
+
+// 2. 실제 네트워크 전송 와이어 (Wire Binary Hex Dump: ~276 바이트)
+// 0A 11 65 76 74 2D 70 72 6F 64 2D 39 61 32 63 33 66 38 31
+// 12 15 63 6C 61 75 64 65 2D 73 65 72 76 69 6E 67 2D 70 6F...'''
+        st.code(sample_proto_code, language="protobuf")
+        st.caption(tr(
+            "✅ 1바이트 Varint 태그 적용: 필드명 전송 0B! (텍스트 키 'timestamp_ms' 14B 대신 1바이트 0x28 + 가변 정수 인코딩)",
+            "✅ 1-byte Varint Tags: 0B field name wire overhead! (Replaces 'timestamp_ms' 14B with 1-byte 0x28 + Varint encoding)"
+        ))
+
+    st.markdown("---")
     st.markdown(f"### 📊 1. {tr('전송 포맷 및 프로토콜 실시간 벤치마크 계산기', 'Real-Time Format & Protocol Benchmark Calculator')}")
 
     f_col1, f_col2 = st.columns([1, 2])
