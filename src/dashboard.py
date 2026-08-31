@@ -1,4 +1,12 @@
-"""Streamlit Interactive Web Dashboard for Google Cloud Pub/Sub Anthropic Architecture Demo."""
+"""Google Cloud Pub/Sub: Anthropic 아키텍처 심층 분석 인터랙티브 Streamlit 대시보드.
+
+[Anthropic 아키텍처 데모 대시보드 구성]
+- 탭 1 (아키텍처 개요): 3대 핵심 기둥(Dual-Path, StreamingPull, Proto-First/DLQ)과 공식 발표 슬라이드 링크
+- 탭 2 (이중 경로 & 압축): Fast Path(<8MB) vs GCS Claim-Check(>=8MB) 실시간 트래픽 생성 및 바이트 절감률 관측
+- 탭 3 (StreamingPull 88% 절감): 영구 gRPC StreamingPull vs 레거시 동기식 배치 폴링 P50/P90/P99 지연 시간 실측 비교
+- 탭 4 (Proto-First & DLQ): Protobuf SHA-256 스키마 거버넌스 및 5회 재시도 실패 시 Dead Letter Topic 격리 서킷 브레이커
+- 탭 5 (실제 GCP 라이브 검증): `pub-sub-kamo` 프로젝트 상의 IAM, Dual-Path, 벤치마크, BigQuery Zero-ETL 실시간 원클릭 검증
+"""
 
 import sys
 import time

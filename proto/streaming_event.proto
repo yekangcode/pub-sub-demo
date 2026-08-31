@@ -2,16 +2,39 @@ syntax = "proto3";
 
 package pubsub_demo.v1;
 
+// Anthropic의 Proto-First 이벤트 스트리밍 규격을 구현한 메시지 정의
 message StreamingEvent {
+  // 이벤트 고유 식별자 (예: evt-3a7b9c-000001)
   string event_id = 1;
+
+  // 이벤트를 생성한 소스 시스템/서비스명 (예: serving-claude, eval-worker)
   string source = 2;
+
+  // Fast Path(<8MB)인 경우: Zstd 압축된 실제 바이너리 페이로드
+  // Offload Path(>=8MB)인 경우: 비어 있음 (payload_uri 참조)
   bytes payload = 3;
+
+  // 페이로드 MIME 타입 (예: application/json, application/octet-stream)
   string payload_type = 4;
+
+  // 이벤트 발행 시점의 Unix 타임스탬프 (밀리초)
   int64 timestamp_ms = 5;
+
+  // 발행자가 실행 중인 GKE Pod 환경 메타데이터 (node, namespace, job, csp)
   map<string, string> pod_env_vars = 6;
+
+  // DLQ(Dead Letter Queue) 서킷 브레이커 테스트용 포이즌 필 플래그
   bool is_corrupted = 7;
+
+  // 스키마 거버넌스 및 호환성 추적을 위한 Protobuf FileDescriptor SHA-256 해시값
   string schema_fingerprint = 8;
+
+  // GCS Claim-Check 오프로드 시 객체 URI (예: gs://pub-sub-kamo-payloads/payloads/evt-xxx.bin)
   string payload_uri = 9;
+
+  // 압축 전 원본 데이터 크기 (바이트 단위)
   int64 uncompressed_bytes = 10;
+
+  // Zstandard 압축 후 실제 데이터 크기 (바이트 단위)
   int64 compressed_bytes = 11;
 }
