@@ -72,6 +72,56 @@ st.markdown(
         border-radius: 4px;
         margin-bottom: 15px;
     }
+    .workflow-card-sync {
+        background: linear-gradient(145deg, #1c1517 0%, #29161a 100%);
+        border: 2px solid #ef5350;
+        border-radius: 10px;
+        padding: 16px 20px;
+        margin-bottom: 12px;
+        box-shadow: 0 4px 14px rgba(239, 83, 80, 0.18);
+    }
+    .workflow-card-stream {
+        background: linear-gradient(145deg, #0f1c24 0%, #11293a 100%);
+        border: 2px solid #00e5ff;
+        border-radius: 10px;
+        padding: 16px 20px;
+        margin-bottom: 12px;
+        box-shadow: 0 4px 14px rgba(0, 229, 255, 0.18);
+    }
+    .step-pill-sync {
+        background-color: #ef5350;
+        color: white !important;
+        font-weight: 800;
+        font-size: 0.82em;
+        padding: 3px 9px;
+        border-radius: 12px;
+        display: inline-block;
+        margin-right: 6px;
+    }
+    .step-pill-stream {
+        background-color: #00e5ff;
+        color: #05141c !important;
+        font-weight: 800;
+        font-size: 0.82em;
+        padding: 3px 9px;
+        border-radius: 12px;
+        display: inline-block;
+        margin-right: 6px;
+    }
+    .flow-arrow-sync {
+        color: #ff8a80;
+        text-align: center;
+        font-size: 0.95em;
+        font-weight: 600;
+        margin: 6px 0;
+    }
+    .flow-arrow-stream {
+        color: #40c4ff;
+        text-align: center;
+        font-size: 0.95em;
+        font-weight: 600;
+        margin: 6px 0;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -469,34 +519,100 @@ with tab3:
 
     st.markdown(
         f"""
-        #### 🗺️ {tr("메시지 수급 워크플로우 비교 (Workflow Sequence)", "Message Consumption Workflow Comparison")}
+        #### 🗺️ {tr("메시지 수급 워크플로우 비교 (Visual Workflow Comparison)", "Message Consumption Visual Workflow Comparison")}
         """
     )
-    st.markdown(
-        """
+
+    wf_col1, wf_col2 = st.columns(2)
+    with wf_col1:
+        st.markdown(
+            f"""
+            <div class="workflow-card-sync">
+                <div style="font-size: 1.15em; font-weight: 800; color: #ff5252; margin-bottom: 14px; border-bottom: 1px solid rgba(239,83,80,0.3); padding-bottom: 8px;">
+                    🔴 ① Sync Pull ({tr("단방향 동기식 폴링", "Unary Synchronous Polling")})
+                    <span style="float: right; background: rgba(239,83,80,0.25); color: #ff8a80; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; font-weight: 700;">
+                        ⏱️ {tr("평균 지연: ~95ms", "Avg Latency: ~95ms")}
+                    </span>
+                </div>
+                <div style="margin-bottom: 8px; color: #ffffff; font-size: 0.93em; line-height: 1.5;">
+                    <span class="step-pill-sync">STEP 1</span> <strong>{tr("PullRequest 전송", "Send PullRequest")}</strong>: {tr("클라이언트가 브로커로 단일 RPC 폴링 요청 발송", "Client issues single RPC polling request to broker")}
+                </div>
+                <div class="flow-arrow-sync">⬇️ {tr("매 요청마다 TCP/TLS 핸드셰이크 & 브로커 큐 조회 대기", "TCP/TLS handshake & broker queue wait on every RPC")}</div>
+                <div style="margin-bottom: 8px; color: #ffffff; font-size: 0.93em; line-height: 1.5;">
+                    <span class="step-pill-sync">STEP 2</span> <strong>{tr("PullResponse 수신", "Receive PullResponse")}</strong>: {tr("동기식으로 큐의 메시지 배치 수신", "Synchronous message batch received from queue")}
+                </div>
+                <div class="flow-arrow-sync">⬇️ {tr("클라이언트 처리 완료 후 개별 Ack 전송", "Client processes message then transmits Ack")}</div>
+                <div style="margin-bottom: 8px; color: #ffffff; font-size: 0.93em; line-height: 1.5;">
+                    <span class="step-pill-sync">STEP 3</span> <strong>{tr("Acknowledge 회신", "Return Acknowledge")}</strong>: {tr("처리된 ack_ids를 별도 RPC로 전송", "Processed ack_ids sent back via separate RPC")}
+                </div>
+                <div class="flow-arrow-sync">🔄 {tr("유휴 대기(Polling Interval) 후 STEP 1부터 재요청 무한 반복...", "Idle wait interval then repeat from STEP 1 endlessly...")}</div>
+                <div style="background: rgba(239,83,80,0.15); border-left: 3px solid #ef5350; padding: 8px 12px; border-radius: 4px; margin-top: 10px; font-size: 0.85em; color: #ffcdd2;">
+                    ⚠️ <strong>{tr("지연 시간 누적", "Latency Accumulation")}</strong>: {tr("메시지가 큐에 없어도 지속적으로 폴링해야 하며, 연결 핸드셰이크와 대기 주기가 더해져 ~95ms 지연 발생.", "Continuous polling even when empty; connection handshakes and sleep intervals add ~95ms latency.")}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with wf_col2:
+        st.markdown(
+            f"""
+            <div class="workflow-card-stream">
+                <div style="font-size: 1.15em; font-weight: 800; color: #00e5ff; margin-bottom: 14px; border-bottom: 1px solid rgba(0,229,255,0.3); padding-bottom: 8px;">
+                    🔵 ② StreamingPull ({tr("영구 양방향 gRPC 스트리밍", "Persistent Bidirectional gRPC")})
+                    <span style="float: right; background: rgba(0,229,255,0.25); color: #00e5ff; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; font-weight: 700;">
+                        ⚡ {tr("평균 지연: ~11ms (88% 절감)", "Avg Latency: ~11ms (-88%)")}
+                    </span>
+                </div>
+                <div style="margin-bottom: 8px; color: #ffffff; font-size: 0.93em; line-height: 1.5;">
+                    <span class="step-pill-stream">STEP 1</span> <strong>{tr("양방향 스트림 1회 수립", "Open Stream Once")}</strong>: {tr("HTTP/2 기반 영구 gRPC 채널 항시 유지", "Single persistent bidirectional HTTP/2 gRPC channel maintained")}
+                </div>
+                <div class="flow-arrow-stream">⚡ {tr("유휴 대기 0초! 브로커가 이벤트 도착 즉시 실시간 푸시", "Zero idle wait! Broker pushes in real-time on message arrival")}</div>
+                <div style="margin-bottom: 8px; color: #ffffff; font-size: 0.93em; line-height: 1.5;">
+                    <span class="step-pill-stream">STEP 2</span> <strong>{tr("StreamingPullResponse 푸시", "Instant Stream Push")}</strong>: {tr("클라이언트 요청 대기 없이 실시간 Push-like 인입", "Real-time push without waiting for client requests")}
+                </div>
+                <div class="flow-arrow-stream">⚡ {tr("백그라운드 스레드/Goroutine이 콜백 즉각 실행", "Background worker/goroutine executes callback immediately")}</div>
+                <div style="margin-bottom: 8px; color: #ffffff; font-size: 0.93em; line-height: 1.5;">
+                    <span class="step-pill-stream">STEP 3</span> <strong>{tr("비동기 Ack 스트림 회신", "Async Streamed Ack")}</strong>: {tr("채널을 닫지 않고 스트림으로 실시간 Ack/유량제어 전달", "Async Ack & flow control streamed without closing connection")}
+                </div>
+                <div class="flow-arrow-stream">🚀 {tr("스트림이 상시 열려 있어 24시간 무중단 초저지연 수급 지속", "Stream kept alive for 24/7 uninterrupted sub-15ms delivery")}</div>
+                <div style="background: rgba(0,229,255,0.15); border-left: 3px solid #00e5ff; padding: 8px 12px; border-radius: 4px; margin-top: 10px; font-size: 0.85em; color: #b2ebf2;">
+                    🎯 <strong>{tr("초저지연 달성", "Ultra-Low Latency")}</strong>: {tr("폴링 왕복 시간과 핸드셰이크가 제거되어 모델 텔레메트리와 에이전트 로그를 ~11ms 만에 실시간 수신.", "Eliminates polling round-trips and handshakes, streaming model telemetry in ~11ms real-time.")}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with st.expander(f"📐 {tr('아키텍처 토폴로지 다이어그램 (Mermaid Architecture Flowchart)', 'Architecture Topology Diagram (Mermaid)')}", expanded=True):
+        st.markdown(
+            """
 ```mermaid
-sequenceDiagram
-    autonumber
-    rect rgb(40, 25, 30)
-    Note over Client_Sync, PubSub_Sync: [① Sync Pull: 단방향 동기식 폴링 루프 - 약 95ms]
-    Client_Sync->>PubSub_Sync: 1. PullRequest(max_messages=10)
-    Note over Client_Sync, PubSub_Sync: 매 요청마다 TCP/TLS 핸드셰이크 및 브로커 대기 오버헤드
-    PubSub_Sync-->>Client_Sync: 2. PullResponse(messages)
-    Client_Sync->>PubSub_Sync: 3. AcknowledgeRequest(ack_ids)
-    Note over Client_Sync: 대기 주기(Polling Sleep) 후 다시 다음 PullRequest 반복...
+flowchart TD
+    subgraph SYNC ["🔴 ① Sync Pull (단방향 동기식 폴링: ~95ms)"]
+        direction TB
+        S1["1. Client: PullRequest 호출<br/>(단일 RPC 요청)"]
+        S2["2. TCP/TLS 핸드셰이크 & 브로커 대기<br/>(지연 시간 누적: ~95ms)"]
+        S3["3. Pub/Sub Broker: PullResponse 반환<br/>(동기식 메시지 전달)"]
+        S4["4. Client: 메시지 처리 & Ack 회신"]
+        S5["5. 유휴 대기(Polling Sleep) 후 다음 주기 반복..."]
+        S1 --> S2 --> S3 --> S4 --> S5 -.->|다음 주기 재요청| S1
     end
 
-    rect rgb(15, 35, 45)
-    Note over Client_Stream, PubSub_Stream: [② StreamingPull: 영구 양방향 gRPC 스트리밍 - 약 11ms (88% 절감)]
-    Client_Stream->>PubSub_Stream: 1. Open Bidirectional gRPC Channel (HTTP/2)
-    Note over PubSub_Stream: 브로커는 데이터 인입 즉시 클라이언트 요청 없이 스트림으로 푸시(Push-like)!
-    PubSub_Stream-->>Client_Stream: 2. StreamingPullResponse (도착 즉시 실시간 푸시)
-    Client_Stream-->>PubSub_Stream: 3. StreamingPullRequest (비동기 Ack / Flow Control 전달)
-    Note over Client_Stream, PubSub_Stream: 단일 스트림 채널을 항시 유지하여 폴링 유휴 대기 시간 전무
+    subgraph STREAM ["🔵 ② StreamingPull (영구 양방향 gRPC: ~11ms)"]
+        direction TB
+        ST1["1. Client: 양방향 gRPC 스트림 1회 연결<br/>(HTTP/2 채널 항시 유지)"]
+        ST2["2. Pub/Sub Broker: 실시간 이벤트 인입"]
+        ST3["3. 브로커가 도착 즉시 실시간 푸시!<br/>(Push-like Streaming: ~11ms)"]
+        ST4["4. Client: 비동기 Ack 스트림 회신<br/>(채널 끊김 없이 무중단 수급)"]
+        ST1 <===> ST2
+        ST2 ==>|대기 시간 0초 실시간 푸시| ST3
+        ST3 -.->|비동기 Ack / Flow Control| ST4
+        ST4 -.->|스트림 항시 유지| ST1
     end
 ```
-        """
-    )
+            """
+        )
 
     st.markdown(f"#### 1. {tr('아키텍처 설계상의 근본적 차이', 'Fundamental Architectural Differences')}")
     arch_col1, arch_col2 = st.columns(2)
