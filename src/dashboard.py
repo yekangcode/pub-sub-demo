@@ -31,7 +31,7 @@ from src.gcp_client import GCPClientFactory, GCPMode
 from src.generator import SyntheticWorkloadGenerator
 from src.metrics import MetricsCollector
 from src.publisher import DualPathPublisher
-from src.payload_inspector import PayloadInspector
+from src.payload_inspector import InspectedPayload, PayloadInspector
 from src.workers.streaming_worker import StreamingPullWorker
 from src.workers.sync_worker import SyncPullWorker
 
@@ -1179,6 +1179,113 @@ message StreamingEvent {
         else:
             st.info(tr("DLQ에 격리된 메시지가 없습니다. 모든 수집 이벤트가 정상 처리 중입니다.", "No messages in DLQ. All ingested messages healthy."))
 
+def load_bq_inspected_data(target_project_id: str, active_gcp_mode: GCPMode) -> list[InspectedPayload]:
+    inspector = PayloadInspector()
+    inspected_list = []
+
+    if active_gcp_mode == GCPMode.LIVE:
+        try:
+            from google.cloud import bigquery
+
+            bq = bigquery.Client(project=target_project_id)
+            query = f"""
+            SELECT
+                subscription_name,
+                message_id,
+                publish_time,
+                data,
+                TO_JSON_STRING(attributes) AS attr_str
+            FROM `{target_project_id}.pubsub_demo_analytics.streaming_events`
+            ORDER BY publish_time DESC
+            LIMIT 30
+            """
+            job = bq.query(query)
+            for row in job:
+                item = inspector.inspect_raw(
+                    raw_data=row.data,
+                    attributes=row.attr_str,
+                    message_id=str(row.message_id),
+                    publish_time=str(row.publish_time),
+                )
+                inspected_list.append(item)
+        except Exception as e:  # noqa: BLE001
+            st.error(f"BigQuery Query Error: {e}")
+
+    if not inspected_list:
+        from src.compression import CompressionManager
+        from src.proto_gen import streaming_event_pb2
+
+        cm = CompressionManager(level=3)
+
+        # 1. Fast Path Sample (<8MB)
+        prompt = b"Claude-Fast-Path-Prompt-Payload-" * 10  # 320 bytes
+        comp = cm.compress(prompt)
+        evt_fast = streaming_event_pb2.StreamingEvent(
+            event_id="evt-small-001",
+            source="serving-claude",
+            payload=comp,
+            payload_type="text/plain",
+            timestamp_ms=int(time.time() * 1000),
+            pod_env_vars={"node": "gke-node-ai-gpu-1", "namespace": "prod-serving", "csp": "gcp"},
+            schema_fingerprint="sha256-29cf2454e35404c9",
+        )
+        item_fast = inspector.inspect_raw(
+            raw_data=evt_fast.SerializeToString(),
+            attributes={"content-encoding": "zstd", "event-id": "evt-small-001", "path": "fast", "source": "serving-claude"},
+            message_id="msg-live-fast-001",
+            publish_time=time.strftime("%Y-%m-%d %H:%M:%S UTC"),
+        )
+        inspected_list.append(item_fast)
+
+        # 2. GCS Offload Sample (>=8MB Claim-Check)
+        evt_gcs = streaming_event_pb2.StreamingEvent(
+            event_id="evt-large-001",
+            source="serving-claude",
+            payload=b"",
+            payload_type="application/octet-stream",
+            timestamp_ms=int(time.time() * 1000),
+            pod_env_vars={"node": "gke-node-ai-gpu-1", "namespace": "prod-serving", "csp": "gcp"},
+            schema_fingerprint="sha256-29cf2454e35404c9",
+            payload_uri=f"gs://{target_project_id}-payloads/payloads/evt-large-001.bin",
+            uncompressed_bytes=8389632,
+            compressed_bytes=8389837,
+        )
+        item_gcs = inspector.inspect_raw(
+            raw_data=evt_gcs.SerializeToString(),
+            attributes={"content-encoding": "zstd", "event-id": "evt-large-001", "path": "gcs_offload", "source": "serving-claude"},
+            message_id="msg-live-gcs-002",
+            publish_time=time.strftime("%Y-%m-%d %H:%M:%S UTC"),
+        )
+        inspected_list.append(item_gcs)
+
+        # 3. Additional Fast Path Samples
+        sample_prompts = [
+            (b"Anthropic-Production-Serving-Inference-Trace-Sample-" * 8, "inference-trace-002", "claude-serving-engine"),
+            (b"Telemetry-Metrics-Payload-Worker-Node-GKE-Cluster-" * 12, "telemetry-stream-003", "gke-worker-metrics"),
+        ]
+        for i, (p, eid, src) in enumerate(sample_prompts, 3):
+            comp_p = cm.compress(p)
+            evt = streaming_event_pb2.StreamingEvent(
+                event_id=eid,
+                source=src,
+                payload=comp_p,
+                payload_type="text/plain",
+                timestamp_ms=int(time.time() * 1000),
+                pod_env_vars={"node": f"gke-node-ai-gpu-{i}", "namespace": "prod-serving", "csp": "gcp"},
+                schema_fingerprint="sha256-29cf2454e35404c9",
+            )
+            inspected_list.append(
+                inspector.inspect_raw(
+                    raw_data=evt.SerializeToString(),
+                    attributes={"content-encoding": "zstd", "event-id": eid, "path": "fast", "source": src},
+                    message_id=f"msg-mock-{i:03d}",
+                    publish_time=time.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                )
+            )
+
+    return inspected_list
+
+
 # ----------------- TAB 5: LIVE GCP VERIFICATION -----------------
 with tab5:
     st.subheader(tr("실제 Google Cloud 프로젝트 검증 (pub-sub-kamo)", "Live Google Cloud Project Verification (pub-sub-kamo)"))
@@ -1213,287 +1320,189 @@ with tab5:
                     )
 
     with v_col2:
-        st.markdown(f"#### 2. {tr('BigQuery Zero-ETL 스트리밍 실시간 조회 & 페이로드 역직렬화', 'BigQuery Zero-ETL Live Ingestion & Payload Inspection')}")
+        st.markdown(f"#### 2. {tr('BigQuery Zero-ETL 스트리밍 실시간 수집 쿼리 실행', 'BigQuery Zero-ETL Ingestion Query')}")
         st.write(
             tr(
-                "Dataflow 없이 Pub/Sub 브로커가 BigQuery로 직접 수집한 Zstd 압축 Protobuf 바이너리를 실시간 조회하고 원본 내용으로 역직렬화합니다.",
-                "Query Zstd-compressed Protobuf payloads streamed directly into BigQuery without Dataflow and decompress them live.",
+                "Dataflow 없이 Pub/Sub 브로커가 BigQuery로 직접 수집한 Zstd 압축 Protobuf 바이너리를 실시간 쿼리하여 캐시를 갱신합니다.",
+                "Query Zstd-compressed Protobuf payloads streamed directly into BigQuery without Dataflow.",
             )
         )
-        if st.button(tr("🔍 BigQuery 쿼리 및 Zstd/Protobuf 전·후 심층 분석", "🔍 Query BigQuery & Inspect Zstd/Protobuf Before vs After"), use_container_width=True):
-            inspector = PayloadInspector()
-            inspected_list = []
-
-            if gcp_mode == GCPMode.LIVE:
-                try:
-                    from google.cloud import bigquery
-
-                    bq = bigquery.Client(project=project_id)
-                    query = f"""
-                    SELECT
-                        subscription_name,
-                        message_id,
-                        publish_time,
-                        data,
-                        TO_JSON_STRING(attributes) AS attr_str
-                    FROM `{project_id}.pubsub_demo_analytics.streaming_events`
-                    ORDER BY publish_time DESC
-                    LIMIT 30
-                    """
-                    job = bq.query(query)
-                    for row in job:
-                        item = inspector.inspect_raw(
-                            raw_data=row.data,
-                            attributes=row.attr_str,
-                            message_id=str(row.message_id),
-                            publish_time=str(row.publish_time),
-                        )
-                        inspected_list.append(item)
-                    st.session_state["bq_inspected"] = inspected_list
-                except Exception as e:  # noqa: BLE001
-                    st.error(f"BigQuery Query Error: {e}")
-            else:
-                from src.compression import CompressionManager
-                from src.proto_gen import streaming_event_pb2
-
-                cm = CompressionManager(level=3)
-
-                # 1. Fast Path Sample (<8MB)
-                prompt = b"Claude-Fast-Path-Prompt-Payload-" * 10  # 320 bytes
-                comp = cm.compress(prompt)
-                evt_fast = streaming_event_pb2.StreamingEvent(
-                    event_id="evt-small-001",
-                    source="serving-claude",
-                    payload=comp,
-                    payload_type="text/plain",
-                    timestamp_ms=int(time.time() * 1000),
-                    pod_env_vars={"node": "gke-node-ai-gpu-1", "namespace": "prod-serving", "csp": "gcp"},
-                    schema_fingerprint="sha256-29cf2454e35404c9",
-                )
-                item_fast = inspector.inspect_raw(
-                    raw_data=evt_fast.SerializeToString(),
-                    attributes={"content-encoding": "zstd", "event-id": "evt-small-001", "path": "fast", "source": "serving-claude"},
-                    message_id="msg-live-fast-001",
-                    publish_time=time.strftime("%Y-%m-%d %H:%M:%S UTC"),
-                )
-                inspected_list.append(item_fast)
-
-                # 2. GCS Offload Sample (>=8MB Claim-Check)
-                evt_gcs = streaming_event_pb2.StreamingEvent(
-                    event_id="evt-large-001",
-                    source="serving-claude",
-                    payload=b"",
-                    payload_type="application/octet-stream",
-                    timestamp_ms=int(time.time() * 1000),
-                    pod_env_vars={"node": "gke-node-ai-gpu-1", "namespace": "prod-serving", "csp": "gcp"},
-                    schema_fingerprint="sha256-29cf2454e35404c9",
-                    payload_uri=f"gs://{project_id}-payloads/payloads/evt-large-001.bin",
-                    uncompressed_bytes=8389632,
-                    compressed_bytes=8389837,
-                )
-                item_gcs = inspector.inspect_raw(
-                    raw_data=evt_gcs.SerializeToString(),
-                    attributes={"content-encoding": "zstd", "event-id": "evt-large-001", "path": "gcs_offload", "source": "serving-claude"},
-                    message_id="msg-live-gcs-002",
-                    publish_time=time.strftime("%Y-%m-%d %H:%M:%S UTC"),
-                )
-                inspected_list.append(item_gcs)
-
-                # 3. Additional Fast Path Samples
-                sample_prompts = [
-                    (b"Anthropic-Production-Serving-Inference-Trace-Sample-" * 8, "inference-trace-002", "claude-serving-engine"),
-                    (b"Telemetry-Metrics-Payload-Worker-Node-GKE-Cluster-" * 12, "telemetry-stream-003", "gke-worker-metrics"),
-                ]
-                for i, (p, eid, src) in enumerate(sample_prompts, 3):
-                    comp_p = cm.compress(p)
-                    evt = streaming_event_pb2.StreamingEvent(
-                        event_id=eid,
-                        source=src,
-                        payload=comp_p,
-                        payload_type="text/plain",
-                        timestamp_ms=int(time.time() * 1000),
-                        pod_env_vars={"node": f"gke-node-ai-gpu-{i}", "namespace": "prod-serving", "csp": "gcp"},
-                        schema_fingerprint="sha256-29cf2454e35404c9",
-                    )
-                    inspected_list.append(
-                        inspector.inspect_raw(
-                            raw_data=evt.SerializeToString(),
-                            attributes={"content-encoding": "zstd", "event-id": eid, "path": "fast", "source": src},
-                            message_id=f"msg-mock-{i:03d}",
-                            publish_time=time.strftime("%Y-%m-%d %H:%M:%S UTC"),
-                        )
-                    )
-                st.session_state["bq_inspected"] = inspected_list
+        if st.button(tr("🔄 BigQuery 쿼리 실행 및 최신 데이터 갱신", "🔄 Run BigQuery Query & Refresh Cache"), use_container_width=True, key="bq_refresh_btn"):
+            st.session_state["bq_inspected"] = load_bq_inspected_data(project_id, gcp_mode)
+            st.success(tr("✓ BigQuery 최신 적재 데이터 조회 및 갱신 완료!", "✓ BigQuery data refreshed!"))
 
     # ----------------- SECTION 3: BIGQUERY ZSTD & PROTOBUF DECOMPRESSION INSPECTION -----------------
-    if st.session_state.get("bq_inspected"):
-        all_inspected = st.session_state["bq_inspected"]
-        st.markdown("---")
-        st.markdown(
-            f"### 🔬 {tr('BigQuery 적재 데이터 Zstd 압축 해제 & Protobuf 역직렬화 심층 분석 (Before vs After)', 'BigQuery Zstd Decompression & Protobuf Deserialization Deep Dive (Before vs After)')}"
+    st.markdown("---")
+    st.markdown(
+        f"### 3. 🔬 {tr('BigQuery 적재 데이터 Zstd 압축 해제 & Protobuf 역직렬화 심층 분석 (Before vs After)', 'BigQuery Zstd Decompression & Protobuf Deserialization Deep Dive (Before vs After)')}"
+    )
+    st.caption(
+        tr(
+            "BigQuery에 저장된 원시 바이너리(Bytes)를 Zstd 알고리즘으로 압축 해제하고 Protocol Buffers 스키마로 복원하여 압축 전/후 용량 및 원본 텍스트를 정밀 비교합니다.",
+            "Decompresses raw bytes stored in BigQuery via Zstd and deserializes Protocol Buffers to compare before/after size and payload text.",
         )
-        st.caption(
-            tr(
-                "BigQuery에 저장된 원시 바이너리(Bytes)를 Zstd 알고리즘으로 압축 해제하고 Protocol Buffers 스키마로 복원하여 압축 전/후 용량 및 원본 텍스트를 정밀 비교합니다.",
-                "Decompresses raw bytes stored in BigQuery via Zstd and deserializes Protocol Buffers to compare before/after size and payload text.",
+    )
+
+    if not st.session_state.get("bq_inspected"):
+        st.session_state["bq_inspected"] = load_bq_inspected_data(project_id, gcp_mode)
+
+    all_inspected = st.session_state["bq_inspected"]
+
+    # 1-Click Featured Path Examples
+    st.markdown(f"#### 🎯 {tr('대표 전송 경로(Path) 1-Click 예시 바로보기', '1-Click Featured Path Examples')}")
+    ex_c1, ex_c2 = st.columns(2)
+    with ex_c1:
+        if st.button(tr("⚡ [예시 1] Fast Path (<8MB) 대표 이벤트 (evt-small-001)", "⚡ [Ex 1] Fast Path (<8MB) Sample (evt-small-001)"), use_container_width=True):
+            st.session_state["target_event_id"] = "evt-small-001"
+            st.session_state["target_path_filter"] = tr("⚡ Fast Path (<8MB)", "⚡ Fast Path (<8MB)")
+    with ex_c2:
+        if st.button(tr("📦 [예시 2] GCS Claim-Check (>=8MB) 대표 이벤트 (evt-large-001)", "📦 [Ex 2] GCS Claim-Check (>=8MB) Sample (evt-large-001)"), use_container_width=True):
+            st.session_state["target_event_id"] = "evt-large-001"
+            st.session_state["target_path_filter"] = tr("📦 GCS Claim-Check (>=8MB)", "📦 GCS Claim-Check (>=8MB)")
+
+    filter_options = [
+        tr("전체 (All)", "All"),
+        tr("⚡ Fast Path (<8MB)", "⚡ Fast Path (<8MB)"),
+        tr("📦 GCS Claim-Check (>=8MB)", "📦 GCS Claim-Check (>=8MB)"),
+    ]
+    active_filter_idx = 0
+    if st.session_state.get("target_path_filter") in filter_options:
+        active_filter_idx = filter_options.index(st.session_state["target_path_filter"])
+
+    path_filter = st.radio(
+        tr("경로별 필터링", "Filter by Routing Path"),
+        filter_options,
+        index=active_filter_idx,
+        horizontal=True,
+    )
+
+    if "Fast Path" in path_filter:
+        inspected = [x for x in all_inspected if not x.is_gcs_claim_check]
+    elif "GCS" in path_filter:
+        inspected = [x for x in all_inspected if x.is_gcs_claim_check]
+    else:
+        inspected = all_inspected
+
+    if not inspected:
+        st.info(tr("선택한 필터 조건에 해당하는 레코드가 없어 전체 레코드를 표시합니다.", "No records for filter; displaying all."))
+        inspected = all_inspected
+
+    total_stored = sum(item.raw_bytes_len for item in inspected)
+    total_restored = sum(item.uncompressed_payload_bytes for item in inspected)
+    total_comp_payloads = sum(item.compressed_payload_bytes for item in inspected)
+    avg_red = ((total_restored - total_comp_payloads) / total_restored * 100.0) if total_restored > 0 else 0.0
+
+    m1, m2, m3, m4 = st.columns(4)
+    with m1:
+        st.metric(tr("표시된 스트리밍 레코드", "Displayed Records"), f"{len(inspected)}건")
+    with m2:
+        st.metric(tr("BigQuery 저장 총 크기", "Total Stored Size"), f"{total_stored:,} B", help=tr("Zstd 압축 및 Protobuf 직렬화된 실제 저장 용량", "Actual stored size in BigQuery"))
+    with m3:
+        st.metric(tr("복원된 원본 총 크기", "Total Restored Size"), f"{total_restored:,} B", help=tr("압축 해제된 순수 원본 텍스트/데이터 용량", "Total decompressed payload size"))
+    with m4:
+        st.metric(tr("평균 대역폭/용량 절감률", "Avg Data Reduction"), f"{avg_red:.1f}%", delta=f"-{avg_red:.1f}%")
+
+    # 1. Summary DataFrame
+    summary_rows = [
+        {
+            tr("메시지 ID", "Message ID"): item.message_id,
+            tr("이벤트 ID", "Event ID"): item.event_id,
+            tr("전송 경로", "Path"): "📦 GCS Offload" if item.is_gcs_claim_check else "⚡ Fast Path",
+            tr("출처", "Source"): item.source,
+            tr("수집 시각", "Publish Time"): item.publish_time,
+            tr("저장 크기", "Stored Size"): f"{item.raw_bytes_len:,} B",
+            tr("복원 크기", "Restored Size"): f"{item.uncompressed_payload_bytes:,} B",
+            tr("절감률", "Reduction"): f"{item.reduction_percent:.1f}%",
+            tr("Zstd/헤더 상태", "Header Status"): "✓ Claim-Check" if item.is_gcs_claim_check else ("✓ Zstd 감지" if item.is_zstd_compressed else "• 미압축"),
+        }
+        for item in inspected
+    ]
+    st.dataframe(pd.DataFrame(summary_rows), use_container_width=True)
+
+    # 2. Detailed Before vs After Card
+    st.markdown(f"#### 🔍 {tr('개별 이벤트 전/후 (Before vs After) 상세 디코딩 뷰어', 'Event Before vs After Inspection Viewer')}")
+
+    # Auto-select target event if set
+    default_idx = 0
+    if st.session_state.get("target_event_id"):
+        for i, x in enumerate(inspected):
+            if x.event_id == st.session_state["target_event_id"]:
+                default_idx = i
+                break
+
+    selected_idx = st.selectbox(
+        tr("분석할 이벤트 선택", "Select Event to Inspect"),
+        range(len(inspected)),
+        index=default_idx,
+        format_func=lambda i: f"[{i+1}] {'📦 [GCS Offload]' if inspected[i].is_gcs_claim_check else '⚡ [Fast Path]'} Event: {inspected[i].event_id} | Msg: {inspected[i].message_id} | 절감률: {inspected[i].reduction_percent:.1f}%",
+    )
+    cur = inspected[selected_idx]
+
+    b_col, a_col = st.columns(2)
+    with b_col:
+        if cur.is_gcs_claim_check:
+            st.markdown(
+                f"<div style='border: 2px solid #ff9800; border-radius: 8px; padding: 15px; background: rgba(255, 152, 0, 0.05);'>"
+                f"<h4 style='color: #ff9800; margin-top: 0;'>📦 [BEFORE] BigQuery 적재 원본 (Claim-Check 메타데이터 포인터)</h4>"
+                f"<p><b>저장된 바이너리 크기:</b> <code>{cur.raw_bytes_len} Bytes</code></p>"
+                f"<p><b>전송 아키텍처:</b> <span class='badge-blue'>✓ Cloud Storage Claim-Check 오프로드 포인터</span></p>"
+                f"<p style='font-size: 0.85em; color: gray;'>Pub/Sub 메시지에는 대용량 데이터 대신 GCS 객체 포인터만 수납되어 브로커 10MB 물리 한도를 완벽히 우회하고 OOM을 원천 차단합니다.</p>"
+                f"</div>",
+                unsafe_allow_html=True,
             )
-        )
-
-        # 1-Click Featured Path Examples
-        st.markdown(f"#### 🎯 {tr('대표 전송 경로(Path) 1-Click 예시 바로보기', '1-Click Featured Path Examples')}")
-        ex_c1, ex_c2 = st.columns(2)
-        with ex_c1:
-            if st.button(tr("⚡ [예시 1] Fast Path (<8MB) 대표 이벤트 (evt-small-001)", "⚡ [Ex 1] Fast Path (<8MB) Sample (evt-small-001)"), use_container_width=True):
-                st.session_state["target_event_id"] = "evt-small-001"
-                st.session_state["target_path_filter"] = tr("⚡ Fast Path (<8MB)", "⚡ Fast Path (<8MB)")
-        with ex_c2:
-            if st.button(tr("📦 [예시 2] GCS Claim-Check (>=8MB) 대표 이벤트 (evt-large-001)", "📦 [Ex 2] GCS Claim-Check (>=8MB) Sample (evt-large-001)"), use_container_width=True):
-                st.session_state["target_event_id"] = "evt-large-001"
-                st.session_state["target_path_filter"] = tr("📦 GCS Claim-Check (>=8MB)", "📦 GCS Claim-Check (>=8MB)")
-
-        filter_options = [
-            tr("전체 (All)", "All"),
-            tr("⚡ Fast Path (<8MB)", "⚡ Fast Path (<8MB)"),
-            tr("📦 GCS Claim-Check (>=8MB)", "📦 GCS Claim-Check (>=8MB)"),
-        ]
-        active_filter_idx = 0
-        if st.session_state.get("target_path_filter") in filter_options:
-            active_filter_idx = filter_options.index(st.session_state["target_path_filter"])
-
-        path_filter = st.radio(
-            tr("경로별 필터링", "Filter by Routing Path"),
-            filter_options,
-            index=active_filter_idx,
-            horizontal=True,
-        )
-
-        if "Fast Path" in path_filter:
-            inspected = [x for x in all_inspected if not x.is_gcs_claim_check]
-        elif "GCS" in path_filter:
-            inspected = [x for x in all_inspected if x.is_gcs_claim_check]
         else:
-            inspected = all_inspected
-
-        if not inspected:
-            st.info(tr("선택한 필터 조건에 해당하는 레코드가 없어 전체 레코드를 표시합니다.", "No records for filter; displaying all."))
-            inspected = all_inspected
-
-        total_stored = sum(item.raw_bytes_len for item in inspected)
-        total_restored = sum(item.uncompressed_payload_bytes for item in inspected)
-        total_comp_payloads = sum(item.compressed_payload_bytes for item in inspected)
-        avg_red = ((total_restored - total_comp_payloads) / total_restored * 100.0) if total_restored > 0 else 0.0
-
-        m1, m2, m3, m4 = st.columns(4)
-        with m1:
-            st.metric(tr("표시된 스트리밍 레코드", "Displayed Records"), f"{len(inspected)}건")
-        with m2:
-            st.metric(tr("BigQuery 저장 총 크기", "Total Stored Size"), f"{total_stored:,} B", help=tr("Zstd 압축 및 Protobuf 직렬화된 실제 저장 용량", "Actual stored size in BigQuery"))
-        with m3:
-            st.metric(tr("복원된 원본 총 크기", "Total Restored Size"), f"{total_restored:,} B", help=tr("압축 해제된 순수 원본 텍스트/데이터 용량", "Total decompressed payload size"))
-        with m4:
-            st.metric(tr("평균 대역폭/용량 절감률", "Avg Data Reduction"), f"{avg_red:.1f}%", delta=f"-{avg_red:.1f}%")
-
-        # 1. Summary DataFrame
-        summary_rows = [
-            {
-                tr("메시지 ID", "Message ID"): item.message_id,
-                tr("이벤트 ID", "Event ID"): item.event_id,
-                tr("전송 경로", "Path"): "📦 GCS Offload" if item.is_gcs_claim_check else "⚡ Fast Path",
-                tr("출처", "Source"): item.source,
-                tr("수집 시각", "Publish Time"): item.publish_time,
-                tr("저장 크기", "Stored Size"): f"{item.raw_bytes_len:,} B",
-                tr("복원 크기", "Restored Size"): f"{item.uncompressed_payload_bytes:,} B",
-                tr("절감률", "Reduction"): f"{item.reduction_percent:.1f}%",
-                tr("Zstd/헤더 상태", "Header Status"): "✓ Claim-Check" if item.is_gcs_claim_check else ("✓ Zstd 감지" if item.is_zstd_compressed else "• 미압축"),
-            }
-            for item in inspected
-        ]
-        st.dataframe(pd.DataFrame(summary_rows), use_container_width=True)
-
-        # 2. Detailed Before vs After Card
-        st.markdown(f"#### 🔍 {tr('개별 이벤트 전/후 (Before vs After) 상세 디코딩 뷰어', 'Event Before vs After Inspection Viewer')}")
-
-        # Auto-select target event if set
-        default_idx = 0
-        if st.session_state.get("target_event_id"):
-            for i, x in enumerate(inspected):
-                if x.event_id == st.session_state["target_event_id"]:
-                    default_idx = i
-                    break
-
-        selected_idx = st.selectbox(
-            tr("분석할 이벤트 선택", "Select Event to Inspect"),
-            range(len(inspected)),
-            index=default_idx,
-            format_func=lambda i: f"[{i+1}] {'📦 [GCS Offload]' if inspected[i].is_gcs_claim_check else '⚡ [Fast Path]'} Event: {inspected[i].event_id} | Msg: {inspected[i].message_id} | 절감률: {inspected[i].reduction_percent:.1f}%",
-        )
-        cur = inspected[selected_idx]
-
-        b_col, a_col = st.columns(2)
-        with b_col:
-            if cur.is_gcs_claim_check:
-                st.markdown(
-                    f"<div style='border: 2px solid #ff9800; border-radius: 8px; padding: 15px; background: rgba(255, 152, 0, 0.05);'>"
-                    f"<h4 style='color: #ff9800; margin-top: 0;'>📦 [BEFORE] BigQuery 적재 원본 (Claim-Check 메타데이터 포인터)</h4>"
-                    f"<p><b>저장된 바이너리 크기:</b> <code>{cur.raw_bytes_len} Bytes</code></p>"
-                    f"<p><b>전송 아키텍처:</b> <span class='badge-blue'>✓ Cloud Storage Claim-Check 오프로드 포인터</span></p>"
-                    f"<p style='font-size: 0.85em; color: gray;'>Pub/Sub 메시지에는 대용량 데이터 대신 GCS 객체 포인터만 수납되어 브로커 10MB 물리 한도를 완벽히 우회하고 OOM을 원천 차단합니다.</p>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    f"<div style='border: 2px solid #ef5350; border-radius: 8px; padding: 15px; background: rgba(239, 83, 80, 0.05);'>"
-                    f"<h4 style='color: #ef5350; margin-top: 0;'>📦 [BEFORE] BigQuery 적재 원본 (인라인 Zstd 압축 바이너리)</h4>"
-                    f"<p><b>저장된 바이너리 크기:</b> <code>{cur.raw_bytes_len} Bytes</code> (압축 페이로드: <code>{cur.compressed_payload_bytes} Bytes</code>)</p>"
-                    f"<p><b>Zstd 매직 헤더:</b> <span class='badge-blue'>{'✓ 0x28 0xB5 0x2F 0xFD 일치' if cur.is_zstd_compressed else '• 미압축'}</span></p>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-            st.markdown(f"**Base64 인코딩 원문:**")
-            st.code(cur.base64_preview, language="text")
-            with st.expander(tr("원본 Pub/Sub Attributes JSON 보기", "View Raw Attributes JSON")):
-                st.json(cur.raw_attributes)
-
-        with a_col:
-            if cur.is_gcs_claim_check:
-                st.markdown(
-                    f"<div style='border: 2px solid #66bb6a; border-radius: 8px; padding: 15px; background: rgba(102, 187, 106, 0.05);'>"
-                    f"<h4 style='color: #66bb6a; margin-top: 0;'>🔓 [AFTER] Cloud Storage Claim-Check 복원 원본</h4>"
-                    f"<p><b>복원된 원본 크기:</b> <code>{cur.uncompressed_payload_bytes:,} Bytes (~{cur.uncompressed_payload_bytes / (1024*1024):.2f} MB)</code></p>"
-                    f"<p><b>브로커 트래픽 절감:</b> <span class='metric-badge-green'>{cur.reduction_percent:.2f}% 절감 (250B / 8.38MB)</span></p>"
-                    f"<p><b>스키마 스펙:</b> <code>Protocol Buffers (StreamingEvent)</code> | SHA-256: <code>{cur.schema_fingerprint or 'N/A'}</code></p>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    f"<div style='border: 2px solid #66bb6a; border-radius: 8px; padding: 15px; background: rgba(102, 187, 106, 0.05);'>"
-                    f"<h4 style='color: #66bb6a; margin-top: 0;'>🔓 [AFTER] Zstd 압축 해제 & Protobuf 복원 원본</h4>"
-                    f"<p><b>복원된 원본 크기:</b> <code>{cur.uncompressed_payload_bytes} Bytes</code> | <b>절감률:</b> <span class='metric-badge-green'>{cur.reduction_percent:.1f}% 절감</span></p>"
-                    f"<p><b>스키마 스펙:</b> <code>Protocol Buffers (StreamingEvent)</code> | SHA-256: <code>{cur.schema_fingerprint or 'N/A'}</code></p>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-            st.markdown(f"**복원된 내용:**")
-            st.text_area(
-                tr("복원된 원본 내용", "Decompressed Content"),
-                value=cur.decompressed_text,
-                height=130,
-                disabled=True,
-                key=f"decomp_text_{selected_idx}",
+            st.markdown(
+                f"<div style='border: 2px solid #ef5350; border-radius: 8px; padding: 15px; background: rgba(239, 83, 80, 0.05);'>"
+                f"<h4 style='color: #ef5350; margin-top: 0;'>📦 [BEFORE] BigQuery 적재 원본 (인라인 Zstd 압축 바이너리)</h4>"
+                f"<p><b>저장된 바이너리 크기:</b> <code>{cur.raw_bytes_len} Bytes</code> (압축 페이로드: <code>{cur.compressed_payload_bytes} Bytes</code>)</p>"
+                f"<p><b>Zstd 매직 헤더:</b> <span class='badge-blue'>{'✓ 0x28 0xB5 0x2F 0xFD 일치' if cur.is_zstd_compressed else '• 미압축'}</span></p>"
+                f"</div>",
+                unsafe_allow_html=True,
             )
-            with st.expander(tr("복원된 Protobuf 메타데이터 & Pod 환경변수", "Restored Protobuf Metadata & Pod Envs"), expanded=True):
-                meta_display = {
-                    "event_id": cur.event_id,
-                    "source": cur.source,
-                    "payload_type": cur.payload_type,
-                    "schema_fingerprint": cur.schema_fingerprint,
-                    "timestamp_ms": cur.timestamp_ms,
-                    "payload_uri": cur.payload_uri,
-                    "pod_env_vars": cur.pod_env_vars,
-                }
-                st.json(meta_display)
+        st.markdown(f"**Base64 인코딩 원문:**")
+        st.code(cur.base64_preview, language="text")
+        with st.expander(tr("원본 Pub/Sub Attributes JSON 보기", "View Raw Attributes JSON")):
+            st.json(cur.raw_attributes)
+
+    with a_col:
+        if cur.is_gcs_claim_check:
+            st.markdown(
+                f"<div style='border: 2px solid #66bb6a; border-radius: 8px; padding: 15px; background: rgba(102, 187, 106, 0.05);'>"
+                f"<h4 style='color: #66bb6a; margin-top: 0;'>🔓 [AFTER] Cloud Storage Claim-Check 복원 원본</h4>"
+                f"<p><b>복원된 원본 크기:</b> <code>{cur.uncompressed_payload_bytes:,} Bytes (~{cur.uncompressed_payload_bytes / (1024*1024):.2f} MB)</code></p>"
+                f"<p><b>브로커 트래픽 절감:</b> <span class='metric-badge-green'>{cur.reduction_percent:.2f}% 절감 (250B / 8.38MB)</span></p>"
+                f"<p><b>스키마 스펙:</b> <code>Protocol Buffers (StreamingEvent)</code> | SHA-256: <code>{cur.schema_fingerprint or 'N/A'}</code></p>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                f"<div style='border: 2px solid #66bb6a; border-radius: 8px; padding: 15px; background: rgba(102, 187, 106, 0.05);'>"
+                f"<h4 style='color: #66bb6a; margin-top: 0;'>🔓 [AFTER] Zstd 압축 해제 & Protobuf 복원 원본</h4>"
+                f"<p><b>복원된 원본 크기:</b> <code>{cur.uncompressed_payload_bytes} Bytes</code> | <b>절감률:</b> <span class='metric-badge-green'>{cur.reduction_percent:.1f}% 절감</span></p>"
+                f"<p><b>스키마 스펙:</b> <code>Protocol Buffers (StreamingEvent)</code> | SHA-256: <code>{cur.schema_fingerprint or 'N/A'}</code></p>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+        st.markdown(f"**복원된 내용:**")
+        st.text_area(
+            tr("복원된 원본 내용", "Decompressed Content"),
+            value=cur.decompressed_text,
+            height=130,
+            disabled=True,
+            key=f"decomp_text_{selected_idx}",
+        )
+        with st.expander(tr("복원된 Protobuf 메타데이터 & Pod 환경변수", "Restored Protobuf Metadata & Pod Envs"), expanded=True):
+            meta_display = {
+                "event_id": cur.event_id,
+                "source": cur.source,
+                "payload_type": cur.payload_type,
+                "schema_fingerprint": cur.schema_fingerprint,
+                "timestamp_ms": cur.timestamp_ms,
+                "payload_uri": cur.payload_uri,
+                "pod_env_vars": cur.pod_env_vars,
+            }
+            st.json(meta_display)
 
     # ----------------- SECTION 4: LIVE STREAMING PULL VS SYNC PULL BENCHMARK & GCP MONITORING -----------------
     st.markdown("---")
