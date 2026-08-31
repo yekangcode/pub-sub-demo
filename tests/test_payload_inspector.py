@@ -61,3 +61,34 @@ def test_payload_inspector_empty():
     res = inspector.inspect_raw(raw_data=None, attributes=None)
     assert res.raw_bytes_len == 0
     assert res.error_message != ""
+
+
+def test_payload_inspector_gcs_claim_check():
+    inspector = PayloadInspector()
+    evt = streaming_event_pb2.StreamingEvent(
+        event_id="evt-large-001",
+        source="serving-claude",
+        payload=b"",
+        payload_type="application/octet-stream",
+        timestamp_ms=int(time.time() * 1000),
+        pod_env_vars={"node": "gke-node-gpu", "namespace": "prod"},
+        schema_fingerprint="sha256-test-fp",
+        payload_uri="gs://test-bucket/payloads/evt-large-001.bin",
+        uncompressed_bytes=8389632,
+        compressed_bytes=8389837,
+    )
+    raw_proto = evt.SerializeToString()
+
+    res = inspector.inspect_raw(
+        raw_data=raw_proto,
+        attributes={"path": "gcs_offload", "event-id": "evt-large-001"},
+        message_id="msg-gcs-201",
+    )
+
+    assert res.is_valid_proto is True
+    assert res.is_gcs_claim_check is True
+    assert res.path_type == "gcs_offload"
+    assert res.payload_uri == "gs://test-bucket/payloads/evt-large-001.bin"
+    assert res.uncompressed_payload_bytes == 8389632
+    assert res.reduction_percent > 99.0
+    assert "Cloud Storage Claim-Check" in res.decompressed_text

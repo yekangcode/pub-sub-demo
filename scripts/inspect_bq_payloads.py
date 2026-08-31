@@ -77,35 +77,52 @@ def run_inspection(
 
     # If dry_run or live query returned no records, provide representative simulation samples
     if not records:
-        print("[MOCK] 시뮬레이션 샌드박스 데이터 생성 중...")
+        print("[MOCK] 시뮬레이션 샌드박스 데이터 생성 중 (Fast Path 및 GCS Offload)...")
         from src.compression import CompressionManager
         from src.proto_gen import streaming_event_pb2
 
         cm = CompressionManager(level=3)
-        sample_prompts = [
-            b"Claude-Fast-Path-Prompt-Payload-" * 10,  # 320 bytes
-            b"Anthropic-Production-Serving-Inference-Trace-Sample-" * 8,  # 400 bytes
-            b"Telemetry-Metrics-Payload-Worker-Node-GKE-Cluster-" * 12,  # 576 bytes
-        ]
-        for i, prompt in enumerate(sample_prompts, 1):
-            comp_payload = cm.compress(prompt)
-            evt = streaming_event_pb2.StreamingEvent(
-                event_id=f"sim-evt-{i:03d}",
-                source="claude-serving-engine",
-                payload=comp_payload,
-                payload_type="text/plain",
-                timestamp_ms=int(time.time() * 1000),
-                pod_env_vars={"node": "gke-node-ai-gpu-1", "namespace": "prod-serving", "csp": "gcp"},
-                schema_fingerprint="sha256-29cf2454e35404c9",
-            )
-            raw_proto = evt.SerializeToString()
-            records.append({
-                "subscription_name": f"projects/{project_id}/subscriptions/pubsub-demo-bq-sub",
-                "message_id": f"sim-msg-99{i:03d}",
-                "publish_time": time.strftime("%Y-%m-%d %H:%M:%S UTC"),
-                "data": raw_proto,
-                "attributes": '{"content-encoding": "zstd", "event-id": "sim-evt", "path": "fast"}',
-            })
+
+        # 1. Fast Path Sample (<8MB)
+        prompt = b"Claude-Fast-Path-Prompt-Payload-" * 10  # 320 bytes
+        comp_payload = cm.compress(prompt)
+        evt_fast = streaming_event_pb2.StreamingEvent(
+            event_id="evt-small-001",
+            source="serving-claude",
+            payload=comp_payload,
+            payload_type="text/plain",
+            timestamp_ms=int(time.time() * 1000),
+            pod_env_vars={"node": "gke-node-ai-gpu-1", "namespace": "prod-serving", "csp": "gcp"},
+            schema_fingerprint="sha256-29cf2454e35404c9",
+        )
+        records.append({
+            "subscription_name": f"projects/{project_id}/subscriptions/pubsub-demo-bq-sub",
+            "message_id": "sim-msg-fast-001",
+            "publish_time": time.strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "data": evt_fast.SerializeToString(),
+            "attributes": '{"content-encoding": "zstd", "event-id": "evt-small-001", "path": "fast", "source": "serving-claude"}',
+        })
+
+        # 2. GCS Offload Sample (>=8MB Claim-Check)
+        evt_gcs = streaming_event_pb2.StreamingEvent(
+            event_id="evt-large-001",
+            source="serving-claude",
+            payload=b"",
+            payload_type="application/octet-stream",
+            timestamp_ms=int(time.time() * 1000),
+            pod_env_vars={"node": "gke-node-ai-gpu-1", "namespace": "prod-serving", "csp": "gcp"},
+            schema_fingerprint="sha256-29cf2454e35404c9",
+            payload_uri=f"gs://{project_id}-payloads/payloads/evt-large-001.bin",
+            uncompressed_bytes=8389632,
+            compressed_bytes=8389837,
+        )
+        records.append({
+            "subscription_name": f"projects/{project_id}/subscriptions/pubsub-demo-bq-sub",
+            "message_id": "sim-msg-gcs-002",
+            "publish_time": time.strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "data": evt_gcs.SerializeToString(),
+            "attributes": '{"content-encoding": "zstd", "event-id": "evt-large-001", "path": "gcs_offload", "source": "serving-claude"}',
+        })
 
     print(f"\n총 {len(records)}건의 BigQuery 스트리밍 레코드 분석을 시작합니다.\n")
 
@@ -133,12 +150,17 @@ def run_inspection(
         if res.is_valid_proto:
             print(f"  • Protocol Buffers:   ✓ 스키마 정상 역직렬화 (StreamingEvent)")
             print(f"  • Event ID / Source:  {res.event_id}  (출처: {res.source})")
+            print(f"  • 전송 경로(Path):    {'📦 GCS Claim-Check Offload (>=8MB)' if res.is_gcs_claim_check else '⚡ Fast Path Inline (<8MB)'}")
             print(f"  • Schema Fingerprint: {res.schema_fingerprint}")
             print(f"  • Pod 환경 메타데이터: {res.pod_env_vars}")
-            print(f"  • 페이로드 압축 해제: {res.compressed_payload_bytes}B -> {res.uncompressed_payload_bytes}B "
-                  f"({res.reduction_percent:.1f}% 용량 절감)")
-            print(f"  • 복원된 원본 텍스트:")
-            preview = res.decompressed_text[:150] + ("..." if len(res.decompressed_text) > 150 else "")
+            if res.is_gcs_claim_check:
+                print(f"  • 브로커 트래픽 절감: {res.uncompressed_payload_bytes:,}B -> {res.raw_bytes_len}B ({res.reduction_percent:.2f}% 절감!)")
+                print(f"  • GCS 저장 위치:      {res.payload_uri}")
+            else:
+                print(f"  • 페이로드 압축 해제: {res.compressed_payload_bytes}B -> {res.uncompressed_payload_bytes}B "
+                      f"({res.reduction_percent:.1f}% 용량 절감)")
+            print(f"  • 복원된 원본 내용:")
+            preview = res.decompressed_text[:180] + ("..." if len(res.decompressed_text) > 180 else "")
             print(f"    \"{preview}\"")
         else:
             print(f"  • 원본 크기:          {res.uncompressed_payload_bytes} Bytes")

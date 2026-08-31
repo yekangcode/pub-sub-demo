@@ -179,9 +179,10 @@ def verify_live_deployment(project_id: str, dry_run: bool = False) -> bool:
         simulated_stream_delay_ms=11.0,
     )
 
-    # 벤치마크용 이벤트 10건 발행
+    # 벤치마크용 이벤트 10건 발행 (현실적인 프롬프트/텔레메트리 크기로 전송하여 Zstd 압축률 반영)
+    bench_payload = b"Anthropic-Claude-Serving-Latency-Benchmark-Telemetry-Record-Payload-" * 5
     for i in range(10):
-        publisher.publish_event(f"bench-{i}", "test-runner", b"bench_data")
+        publisher.publish_event(f"bench-{i}", "test-runner", bench_payload)
 
     # Sync Pull 계측
     pulled_sync = sync_worker.pull_batch(max_messages=10)
