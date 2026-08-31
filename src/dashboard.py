@@ -1550,6 +1550,23 @@ with tab5:
 
                 st.session_state["live_bench_executed"] = True
 
+        if st.button(tr("🚀 Cloud Monitoring 차트용 연속 트래픽 발생 (20초 연속)", "🚀 Generate Continuous Traffic for Cloud Monitoring (20s)"), use_container_width=True, key="cont_traffic_btn"):
+            with st.spinner(tr("Cloud Monitoring 차트 생성을 위해 20초간 연속 트래픽 전송 및 풀링 중...", "Generating continuous streaming & pulling traffic for 20s...")):
+                from scripts.generate_monitoring_traffic import generate_traffic
+                generate_traffic(project_id=project_id, topic_id=topic_id, duration_seconds=20)
+                st.success(tr("🎉 20초간 연속 트래픽 전송 완료! 약 2~3분 뒤 GCP 콘솔 차트에 선명한 그래프가 반영됩니다.", "🎉 Continuous traffic sent! Curves will appear in Cloud Console in ~2-3 mins."))
+
+        st.info(
+            tr(
+                "💡 **Cloud Console 'No data available' 안내**:\n"
+                "• Google Cloud Monitoring 시스템 메트릭은 약 **2~3분의 집계 지연(Reporting Latency)**이 있습니다.\n"
+                "• GCP 콘솔 우측 상단 시간 범위를 **1 hour**로 설정하고 1~2분 뒤 새로고침(🔄)하시면 그래프가 나타납니다.",
+                "💡 **Why 'No data available' appears**:\n"
+                "• Cloud Monitoring metrics have a **2-3 min reporting ingestion lag**.\n"
+                "• Set the console time window to **1 hour** and click refresh (🔄) after 1-2 mins.",
+            )
+        )
+
     with c_bench2:
         st.markdown(f"#### {tr('실측 지연 시간 비교 결과 (P99 SLA)', 'Measured P99 SLA Comparison')}")
         if st.session_state.get("live_bench_executed"):
