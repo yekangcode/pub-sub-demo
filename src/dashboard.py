@@ -1618,20 +1618,23 @@ with tab5:
                     callback=lambda m: st.session_state.metrics.record_latency("live_streaming_pull", m.latency_ms),
                     simulated_stream_delay_ms=12.0,
                 )
-                # 메시지 10건 발행
+                # 💡 [핵심 순서] StreamingPull은 상시 연결(Warm Stream)이므로 메시지 발행 전에 먼저 스트림을 개방합니다
+                stream_worker.start()
+                time.sleep(1.2)  # gRPC 양방향 스트림 채널 수립 대기
+
+                # 메시지 10건 발행 (두 구독에 동시 전달)
                 bench_payload = b"Anthropic-Claude-Serving-Latency-Benchmark-Telemetry-Record-Payload-" * 5
                 for i in range(10):
                     publisher.publish_event(f"live-bench-{i}-{int(time.time())}", "test-runner", bench_payload)
 
-                # 1. Sync Pull 계측
+                # 1. StreamingPull: 브로커가 열려있는 스트림으로 즉시 실시간 푸시
+                time.sleep(0.8)
+                stream_worker.stop()
+
+                # 2. Sync Pull 계측: 동기식 Unary RPC 호출 (네트워크 RTT 소요)
                 pulled_sync = sync_worker.pull_batch(max_messages=10)
                 for msg in pulled_sync:
                     st.session_state.metrics.record_latency("live_sync_pull", msg.latency_ms)
-
-                # 2. StreamingPull 계측
-                stream_worker.start()
-                time.sleep(1.5)
-                stream_worker.stop()
 
                 st.session_state["live_bench_executed"] = True
 

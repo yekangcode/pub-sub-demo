@@ -101,17 +101,23 @@ class SyncPullWorker:
                 return []
 
             ack_ids = []
+            now_ms = time.time() * 1000.0
             elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-            per_msg_latency = elapsed_ms / max(1, len(response.received_messages))
 
             for received in response.received_messages:
+                if hasattr(received.message, "publish_time") and received.message.publish_time:
+                    pub_ms = received.message.publish_time.timestamp() * 1000.0
+                    msg_latency = max(elapsed_ms, now_ms - pub_ms)
+                else:
+                    msg_latency = elapsed_ms
+
                 results.append(
                     PullMessageResult(
                         data=received.message.data,
                         attributes=dict(received.message.attributes),
                         message_id=received.message.message_id,
                         ack_id=received.ack_id,
-                        latency_ms=per_msg_latency,
+                        latency_ms=msg_latency,
                     )
                 )
                 ack_ids.append(received.ack_id)
