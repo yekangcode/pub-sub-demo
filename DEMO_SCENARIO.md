@@ -551,7 +551,6 @@ BigQuery `data` 컬럼에 저장된 Zstd 압축 바이너리를 실시간으로 
   • 저장된 바이너리 크기: 224 Bytes
   • Zstd Magic 헤더 일치: ✓ 감지됨 (0x28 0xB5 0x2F 0xFD)
   • Base64 인코딩 원문:   Cg1ldnQtc21hbGwtMDAxEg5zZXJ2aW5nLWNsYXVkZRowKLUv/WBAADUBAOBDbGF1ZGUtRmFzdC1...
-  • Hex 덤프 (앞 32B):    0a 0d 65 76 74 2d 73 6d 61 6c 6c 2d 30 30 31 12 0e 73 65 72 76 69 6e 67 2d
 
 🔓 [AFTER: Zstd 압축 해제 & Protobuf 역직렬화 복원 결과]
   • Protocol Buffers:   ✓ 스키마 정상 역직렬화 (StreamingEvent)

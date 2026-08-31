@@ -143,7 +143,6 @@ def run_inspection(
         print(f"  • 저장된 바이너리 크기: {res.raw_bytes_len} Bytes")
         print(f"  • Zstd Magic 헤더 일치: {'✓ 감지됨 (0x28 0xB5 0x2F 0xFD)' if res.is_zstd_compressed else '• 미압축'}")
         print(f"  • Base64 인코딩 원문:   {res.base64_preview}")
-        print(f"  • Hex 덤프 (앞 32B):    {res.hex_preview}")
 
         # AFTER SECTION
         print("\n🔓 [AFTER: Zstd 압축 해제 & Protobuf 역직렬화 복원 결과]")

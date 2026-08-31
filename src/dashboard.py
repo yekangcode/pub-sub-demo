@@ -1452,8 +1452,6 @@ with tab5:
                 )
             st.markdown(f"**Base64 인코딩 원문:**")
             st.code(cur.base64_preview, language="text")
-            st.markdown(f"**Hex 덤프 (앞 32바이트):**")
-            st.code(cur.hex_preview, language="text")
             with st.expander(tr("원본 Pub/Sub Attributes JSON 보기", "View Raw Attributes JSON")):
                 st.json(cur.raw_attributes)
 
