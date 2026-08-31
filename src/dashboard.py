@@ -527,39 +527,9 @@ with tab3:
     with wf_col1:
         st.markdown(
             f"""
-            <div class="workflow-card-sync">
-                <div style="font-size: 1.15em; font-weight: 800; color: #ff5252; margin-bottom: 14px; border-bottom: 1px solid rgba(239,83,80,0.3); padding-bottom: 8px;">
-                    🔴 ① Sync Pull ({tr("단방향 동기식 폴링", "Unary Synchronous Polling")})
-                    <span style="float: right; background: rgba(239,83,80,0.25); color: #ff8a80; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; font-weight: 700;">
-                        ⏱️ {tr("평균 지연: ~95ms", "Avg Latency: ~95ms")}
-                    </span>
-                </div>
-                <div style="margin-bottom: 8px; color: #ffffff; font-size: 0.93em; line-height: 1.5;">
-                    <span class="step-pill-sync">STEP 1</span> <strong>{tr("PullRequest 전송", "Send PullRequest")}</strong>: {tr("클라이언트가 브로커로 단일 RPC 폴링 요청 발송", "Client issues single RPC polling request to broker")}
-                </div>
-                <div class="flow-arrow-sync">⬇️ {tr("매 요청마다 TCP/TLS 핸드셰이크 & 브로커 큐 조회 대기", "TCP/TLS handshake & broker queue wait on every RPC")}</div>
-                <div style="margin-bottom: 8px; color: #ffffff; font-size: 0.93em; line-height: 1.5;">
-                    <span class="step-pill-sync">STEP 2</span> <strong>{tr("PullResponse 수신", "Receive PullResponse")}</strong>: {tr("동기식으로 큐의 메시지 배치 수신", "Synchronous message batch received from queue")}
-                </div>
-                <div class="flow-arrow-sync">⬇️ {tr("클라이언트 처리 완료 후 개별 Ack 전송", "Client processes message then transmits Ack")}</div>
-                <div style="margin-bottom: 8px; color: #ffffff; font-size: 0.93em; line-height: 1.5;">
-                    <span class="step-pill-sync">STEP 3</span> <strong>{tr("Acknowledge 회신", "Return Acknowledge")}</strong>: {tr("처리된 ack_ids를 별도 RPC로 전송", "Processed ack_ids sent back via separate RPC")}
-                </div>
-                <div class="flow-arrow-sync">🔄 {tr("유휴 대기(Polling Interval) 후 STEP 1부터 재요청 무한 반복...", "Idle wait interval then repeat from STEP 1 endlessly...")}</div>
-                <div style="background: rgba(239,83,80,0.15); border-left: 3px solid #ef5350; padding: 8px 12px; border-radius: 4px; margin-top: 10px; font-size: 0.85em; color: #ffcdd2;">
-                    ⚠️ <strong>{tr("지연 시간 누적", "Latency Accumulation")}</strong>: {tr("메시지가 큐에 없어도 지속적으로 폴링해야 하며, 연결 핸드셰이크와 대기 주기가 더해져 ~95ms 지연 발생.", "Continuous polling even when empty; connection handshakes and sleep intervals add ~95ms latency.")}
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with wf_col2:
-        st.markdown(
-            f"""
             <div class="workflow-card-stream">
                 <div style="font-size: 1.15em; font-weight: 800; color: #00e5ff; margin-bottom: 14px; border-bottom: 1px solid rgba(0,229,255,0.3); padding-bottom: 8px;">
-                    🔵 ② StreamingPull ({tr("영구 양방향 gRPC 스트리밍", "Persistent Bidirectional gRPC")})
+                    🔵 ① StreamingPull ({tr("영구 양방향 gRPC 스트리밍", "Persistent Bidirectional gRPC")})
                     <span style="float: right; background: rgba(0,229,255,0.25); color: #00e5ff; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; font-weight: 700;">
                         ⚡ {tr("평균 지연: ~11ms (88% 절감)", "Avg Latency: ~11ms (-88%)")}
                     </span>
@@ -584,22 +554,42 @@ with tab3:
             unsafe_allow_html=True,
         )
 
+    with wf_col2:
+        st.markdown(
+            f"""
+            <div class="workflow-card-sync">
+                <div style="font-size: 1.15em; font-weight: 800; color: #ff5252; margin-bottom: 14px; border-bottom: 1px solid rgba(239,83,80,0.3); padding-bottom: 8px;">
+                    🔴 ② Sync Pull ({tr("단방향 동기식 폴링", "Unary Synchronous Polling")})
+                    <span style="float: right; background: rgba(239,83,80,0.25); color: #ff8a80; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; font-weight: 700;">
+                        ⏱️ {tr("평균 지연: ~95ms", "Avg Latency: ~95ms")}
+                    </span>
+                </div>
+                <div style="margin-bottom: 8px; color: #ffffff; font-size: 0.93em; line-height: 1.5;">
+                    <span class="step-pill-sync">STEP 1</span> <strong>{tr("PullRequest 전송", "Send PullRequest")}</strong>: {tr("클라이언트가 브로커로 단일 RPC 폴링 요청 발송", "Client issues single RPC polling request to broker")}
+                </div>
+                <div class="flow-arrow-sync">⬇️ {tr("매 요청마다 TCP/TLS 핸드셰이크 & 브로커 큐 조회 대기", "TCP/TLS handshake & broker queue wait on every RPC")}</div>
+                <div style="margin-bottom: 8px; color: #ffffff; font-size: 0.93em; line-height: 1.5;">
+                    <span class="step-pill-sync">STEP 2</span> <strong>{tr("PullResponse 수신", "Receive PullResponse")}</strong>: {tr("동기식으로 큐의 메시지 배치 수신", "Synchronous message batch received from queue")}
+                </div>
+                <div class="flow-arrow-sync">⬇️ {tr("클라이언트 처리 완료 후 개별 Ack 전송", "Client processes message then transmits Ack")}</div>
+                <div style="margin-bottom: 8px; color: #ffffff; font-size: 0.93em; line-height: 1.5;">
+                    <span class="step-pill-sync">STEP 3</span> <strong>{tr("Acknowledge 회신", "Return Acknowledge")}</strong>: {tr("처리된 ack_ids를 별도 RPC로 전송", "Processed ack_ids sent back via separate RPC")}
+                </div>
+                <div class="flow-arrow-sync">🔄 {tr("유휴 대기(Polling Interval) 후 STEP 1부터 재요청 무한 반복...", "Idle wait interval then repeat from STEP 1 endlessly...")}</div>
+                <div style="background: rgba(239,83,80,0.15); border-left: 3px solid #ef5350; padding: 8px 12px; border-radius: 4px; margin-top: 10px; font-size: 0.85em; color: #ffcdd2;">
+                    ⚠️ <strong>{tr("지연 시간 누적", "Latency Accumulation")}</strong>: {tr("메시지가 큐에 없어도 지속적으로 폴링해야 하며, 연결 핸드셰이크와 대기 주기가 더해져 ~95ms 지연 발생.", "Continuous polling even when empty; connection handshakes and sleep intervals add ~95ms latency.")}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
     with st.expander(f"📐 {tr('아키텍처 토폴로지 다이어그램 (Mermaid Architecture Flowchart)', 'Architecture Topology Diagram (Mermaid)')}", expanded=True):
         st.markdown(
             """
 ```mermaid
-flowchart TD
-    subgraph SYNC ["🔴 ① Sync Pull (단방향 동기식 폴링: ~95ms)"]
-        direction TB
-        S1["1. Client: PullRequest 호출<br/>(단일 RPC 요청)"]
-        S2["2. TCP/TLS 핸드셰이크 & 브로커 대기<br/>(지연 시간 누적: ~95ms)"]
-        S3["3. Pub/Sub Broker: PullResponse 반환<br/>(동기식 메시지 전달)"]
-        S4["4. Client: 메시지 처리 & Ack 회신"]
-        S5["5. 유휴 대기(Polling Sleep) 후 다음 주기 반복..."]
-        S1 --> S2 --> S3 --> S4 --> S5 -.->|다음 주기 재요청| S1
-    end
-
-    subgraph STREAM ["🔵 ② StreamingPull (영구 양방향 gRPC: ~11ms)"]
+flowchart LR
+    subgraph STREAM ["🔵 ① StreamingPull (영구 양방향 gRPC: ~11ms)"]
         direction TB
         ST1["1. Client: 양방향 gRPC 스트림 1회 연결<br/>(HTTP/2 채널 항시 유지)"]
         ST2["2. Pub/Sub Broker: 실시간 이벤트 인입"]
@@ -610,6 +600,16 @@ flowchart TD
         ST3 -.->|비동기 Ack / Flow Control| ST4
         ST4 -.->|스트림 항시 유지| ST1
     end
+
+    subgraph SYNC ["🔴 ② Sync Pull (단방향 동기식 폴링: ~95ms)"]
+        direction TB
+        S1["1. Client: PullRequest 호출<br/>(단일 RPC 요청)"]
+        S2["2. TCP/TLS 핸드셰이크 & 브로커 대기<br/>(지연 시간 누적: ~95ms)"]
+        S3["3. Pub/Sub Broker: PullResponse 반환<br/>(동기식 메시지 전달)"]
+        S4["4. Client: 메시지 처리 & Ack 회신"]
+        S5["5. 유휴 대기(Polling Sleep) 후 다음 주기 반복..."]
+        S1 --> S2 --> S3 --> S4 --> S5 -.->|다음 주기 재요청| S1
+    end
 ```
             """
         )
@@ -619,12 +619,12 @@ flowchart TD
     with arch_col1:
         st.markdown(
             f"""
-            <div style="background-color: #1a1e24; border: 1px solid #ef5350; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px;">
-                <span style="font-weight: 700; color: #ef5350; font-size: 1.05em;">① Sync Pull ({tr("단방향 동기식 폴링", "Unary Synchronous Polling")})</span>
+            <div style="background-color: #1a1e24; border: 1px solid #00c6ff; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px;">
+                <span style="font-weight: 700; color: #00c6ff; font-size: 1.05em;">① StreamingPull ({tr("영구 양방향 gRPC 스트리밍", "Persistent Bidirectional gRPC Streaming")})</span>
                 <ul style="color: #cfd8dc; font-size: 0.9em; margin: 8px 0 0 16px; line-height: 1.6;">
-                    <li><strong>{tr("메커니즘", "Mechanism")}</strong>: {tr("클라이언트가 브로커(서버)를 향해 주기적으로 데이터 유무를 확인하는 <strong>단일 RPC 요청-응답 구조</strong>입니다. 전통적인 폴링(Polling) 방식을 따릅니다.", "Single RPC request-response pattern where the client periodically checks the broker for data availability (classic polling).")}</li>
-                    <li><strong>{tr("레이턴시 패널티", "Latency Penalty")}</strong>: {tr("메시지가 존재하지 않을 때도 요청을 반복해야 하며, 다음 주기까지 발생하는 대기 시간과 매번 핸드셰이크를 수행하는 네트워크 오버헤드로 인해 <strong>지연 시간이 누적(~95ms)</strong>됩니다.", "Accumulates latency (~95ms) from idle wait intervals between cycles and repeated connection handshake overheads even when no messages exist.")}</li>
-                    <li><strong>{tr("제어 최적화", "Control Optimization")}</strong>: {tr("수신 측의 가용 리소스 상황에 맞춰 메시지 인입량을 엄격히 제한할 수 있어, <strong>클라이언트 사이드의 부하 관리가 매우 용이</strong>합니다.", "Strictly limits incoming volume based on client-side available resources, making overload prevention straightforward.")}</li>
+                    <li><strong>{tr("메커니즘", "Mechanism")}</strong>: {tr("HTTP/2 기반의 gRPC를 활용하여 클라이언트와 서버 사이에 <strong>항시 유지되는 양방향 채널</strong>을 구축합니다. 브로커는 데이터 인입 즉시 클라이언트 요청 없이도 스트림을 통해 실시간으로 밀어냅니다(Push-like).", "Maintains a persistent bidirectional HTTP/2 gRPC channel. The broker pushes messages in real-time as soon as they arrive without awaiting requests.")}</li>
+                    <li><strong>{tr("퍼포먼스 우위", "Performance Advantage")}</strong>: {tr("폴링에 따르는 유휴 대기 시간이 전무하므로 <strong>극도의 처리량과 초저지연(~11ms)을 보장</strong>합니다. (Anthropic 사례에서 <strong>지연 시간을 88%까지 절감</strong>한 기술적 핵심입니다.)", "Zero idle polling latency ensures ultra-low delivery times (~11ms) and high throughput (the core architectural key to Anthropic's 88% latency slash).")}</li>
+                    <li><strong>{tr("리소스 오버헤드", "Resource Overhead")}</strong>: {tr("스트림 유지 및 비동기 처리를 위한 <strong>백그라운드 프로세싱(스레드/Goroutine)이 필수적</strong>이며, 메모리와 네트워크 대역폭이 상시 점유되는 특징이 있습니다.", "Requires persistent background processing threads/goroutines to manage streams and leases, keeping memory and connections permanently engaged.")}</li>
                 </ul>
             </div>
             """,
@@ -634,12 +634,12 @@ flowchart TD
     with arch_col2:
         st.markdown(
             f"""
-            <div style="background-color: #1a1e24; border: 1px solid #00c6ff; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px;">
-                <span style="font-weight: 700; color: #00c6ff; font-size: 1.05em;">② StreamingPull ({tr("영구 양방향 gRPC 스트리밍", "Persistent Bidirectional gRPC Streaming")})</span>
+            <div style="background-color: #1a1e24; border: 1px solid #ef5350; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px;">
+                <span style="font-weight: 700; color: #ef5350; font-size: 1.05em;">② Sync Pull ({tr("단방향 동기식 폴링", "Unary Synchronous Polling")})</span>
                 <ul style="color: #cfd8dc; font-size: 0.9em; margin: 8px 0 0 16px; line-height: 1.6;">
-                    <li><strong>{tr("메커니즘", "Mechanism")}</strong>: {tr("HTTP/2 기반의 gRPC를 활용하여 클라이언트와 서버 사이에 <strong>항시 유지되는 양방향 채널</strong>을 구축합니다. 브로커는 데이터 인입 즉시 클라이언트 요청 없이도 스트림을 통해 실시간으로 밀어냅니다(Push-like).", "Maintains a persistent bidirectional HTTP/2 gRPC channel. The broker pushes messages in real-time as soon as they arrive without awaiting requests.")}</li>
-                    <li><strong>{tr("퍼포먼스 우위", "Performance Advantage")}</strong>: {tr("폴링에 따르는 유휴 대기 시간이 전무하므로 <strong>극도의 처리량과 초저지연(~11ms)을 보장</strong>합니다. (Anthropic 사례에서 <strong>지연 시간을 88%까지 절감</strong>한 기술적 핵심입니다.)", "Zero idle polling latency ensures ultra-low delivery times (~11ms) and high throughput (the core architectural key to Anthropic's 88% latency slash).")}</li>
-                    <li><strong>{tr("리소스 오버헤드", "Resource Overhead")}</strong>: {tr("스트림 유지 및 비동기 처리를 위한 <strong>백그라운드 프로세싱(스레드/Goroutine)이 필수적</strong>이며, 메모리와 네트워크 대역폭이 상시 점유되는 특징이 있습니다.", "Requires persistent background processing threads/goroutines to manage streams and leases, keeping memory and connections permanently engaged.")}</li>
+                    <li><strong>{tr("메커니즘", "Mechanism")}</strong>: {tr("클라이언트가 브로커(서버)를 향해 주기적으로 데이터 유무를 확인하는 <strong>단일 RPC 요청-응답 구조</strong>입니다. 전통적인 폴링(Polling) 방식을 따릅니다.", "Single RPC request-response pattern where the client periodically checks the broker for data availability (classic polling).")}</li>
+                    <li><strong>{tr("레이턴시 패널티", "Latency Penalty")}</strong>: {tr("메시지가 존재하지 않을 때도 요청을 반복해야 하며, 다음 주기까지 발생하는 대기 시간과 매번 핸드셰이크를 수행하는 네트워크 오버헤드로 인해 <strong>지연 시간이 누적(~95ms)</strong>됩니다.", "Accumulates latency (~95ms) from idle wait intervals between cycles and repeated connection handshake overheads even when no messages exist.")}</li>
+                    <li><strong>{tr("제어 최적화", "Control Optimization")}</strong>: {tr("수신 측의 가용 리소스 상황에 맞춰 메시지 인입량을 엄격히 제한할 수 있어, <strong>클라이언트 사이드의 부하 관리가 매우 용이</strong>합니다.", "Strictly limits incoming volume based on client-side available resources, making overload prevention straightforward.")}</li>
                 </ul>
             </div>
             """,
