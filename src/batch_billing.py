@@ -98,15 +98,36 @@ class BatchBillingOptimizer:
     def get_batch_settings_code_snippet(
         cls, max_messages: int = 100, max_bytes_mb: int = 1, max_latency_ms: int = 50
     ) -> str:
-        """Google Cloud Pub/Sub 클라이언트 라이브러리에 권장되는 BatchSettings 파이썬 코드 스니펫."""
-        return f"""from google.cloud import pubsub_v1
+        """Google Cloud Pub/Sub 클라이언트 라이브러리에 권장되는 BatchSettings 및 FlowControl 파이썬 코드 스니펫."""
+        return f"""import atexit
+from concurrent import futures
+from google.cloud import pubsub_v1
 
-# 1KB 최소 과금 단위 우회 및 처리량 극대화를 위한 BatchSettings 구성
+# 1. BatchSettings: 처리량 극대화 및 1KB 최소 과금 우회
 batch_settings = pubsub_v1.types.BatchSettings(
-    max_messages={max_messages},           # 배치당 최대 메시지 수 (기본: 100)
-    max_bytes={max_bytes_mb} * 1024 * 1024,      # 배치당 최대 바이트 ({max_bytes_mb}MB)
+    max_messages={max_messages},           # 배치당 최대 메시지 수 (권장 500~1000)
+    max_bytes={max_bytes_mb} * 1024 * 1024,      # 배치당 최대 바이트 ({max_bytes_mb}MB, 10MB 한도 내 안전 마진)
     max_latency={max_latency_ms / 1000.0:.3f},         # 허용 레이턴시 버퍼: {max_latency_ms}ms 지연 시 자동 플러시
 )
 
-publisher = pubsub_v1.PublisherClient(batch_settings=batch_settings)
+# 2. PublishFlowControl: OOM 방지 및 클라이언트 백프레셔 제어 (프로덕션 필수!)
+flow_control = pubsub_v1.types.PublishFlowControl(
+    message_limit=5000,
+    byte_limit=50 * 1024 * 1024,    # 최대 50MB 미완료 버퍼 허용
+    limit_exceeded_behavior=pubsub_v1.types.LimitExceededBehavior.BLOCK,  # 메모리 보호를 위해 대기
+)
+
+# 3. PublisherOptions 바인딩 및 클라이언트 인스턴스화
+publisher = pubsub_v1.PublisherClient(
+    batch_settings=batch_settings,
+    publisher_options=pubsub_v1.types.PublisherOptions(
+        enable_message_ordering=False,
+        flow_control=flow_control,
+    ),
+)
+topic_path = publisher.topic_path("your-project-id", "your-topic-id")
+
+# 4. Graceful Shutdown: 프로세스 종료 시 잔여 버퍼 플러시
+pending_futures = []
+atexit.register(lambda: futures.wait(pending_futures, timeout=30.0))
 """

@@ -294,6 +294,14 @@ print(f'\n🎯 월 10억 건 발행 시 절감량: {sav[\"saved_tb_per_1b\"]} TB
 2. **최적화 방안: 클라이언트 라이브러리 `BatchSettings` 튜닝**:
    - 메시지를 단건으로 즉시 발행하지 않고, 비즈니스 허용 지연 시간(Latency Budget: 예 50ms) 내에서 `BatchSettings(max_messages, max_bytes, max_latency)`를 구성하여 여러 메시지를 하나의 `PublishRequest`로 묶어서 전송합니다.
    - 메시지 10개를 하나로 묶어 전송하면 총 데이터 크기가 1KB(1,000바이트)로 처리되어 **과금 단위도 1KB로 정상화(최대 90% 비용 절감)**됩니다.
+3. **핵심 원리 & 물리 한도 (3대 OR 조건)**:
+   - Pub/Sub 클라이언트는 메시지를 버퍼링하다가 `max_messages`(최대 1,000개), `max_bytes`(최대 10MB), `max_latency` 중 **어느 하나라도 먼저 충족(OR 조건)**되면 즉시 단일 RPC로 발송합니다.
+   - **기본값의 함정(Warning)**: 기본값(1ms, 1KB)은 지연 시간에만 치우쳐 개별 RPC가 폭증하므로, 프로덕션에서는 반드시 `500~1,000개`, `4MB~8MB`, `30~50ms`로 튜닝해야 합니다.
+4. **프로덕션 4대 체크리스트 (Hard-Won Production Rules)**:
+   - **10MB 한도 오버헤드 주의**: 서버 한계 10,000,000B 대비 gRPC 프레이밍 헤더 오버헤드를 고려하여 `max_bytes`는 반드시 **8MB ~ 9.5MB**로 설정.
+   - **FlowControl 설정 누락 시 OOM 방지**: 네트워크 지연 시 미완료 Future 누적으로 인한 메모리 고갈을 막기 위해 `LimitExceededBehavior.BLOCK` 필수 적용.
+   - **Graceful Shutdown 구현**: 프로세스 종료(SIGTERM) 시 버퍼 잔여 메시지 유실 방지를 위해 `futures.wait()` / `publisher.shutdown()` 필수 호출.
+   - **Ordering Key 주의점**: 동일 키 메시지 순서 보장 중 단일 배치 실패 시 후속 메시지 영구 블록 방지 대책(`resume_publish`) 마련.
 
 #### 2. 발표자 액션 & 시연
 1. Streamlit 대시보드 **`🛡️ 3. 데이터 포맷 최적화 & DLQ`** 탭의 **`💰 2. 1KB 최소 과금 단위 우회 시뮬레이터`** 섹션으로 스크롤.
@@ -301,7 +309,7 @@ print(f'\n🎯 월 10억 건 발행 시 절감량: {sav[\"saved_tb_per_1b\"]} TB
 3. `배치 묶음 메시지 수 (max_messages)`를 `1`(비배치)에서 `10`(배치)으로 이동하며 우측 메트릭의 변화 시연:
    - `비배치 과금 크기`: 9.54 GB (10.0x 비용 팽창)
    - `배치 적용 과금 크기`: 0.95 GB (**-90.0% 절감!**)
-4. 하단의 `프로덕션 권장 BatchSettings 코드 구성`을 가리키며 실제 Python 프로덕션 적용법 설명.
+4. 하단의 `프로덕션 권장 BatchSettings & FlowControl 코드 구성` 및 `📚 공식 문서 기반 BatchSettings 프로덕션 튜닝 가이드` 아코디언을 열어 워크로드별 3대 프리셋(초저지연/범용/벌크) 및 4대 운영 체크리스트 설명. (상세 가이드: `docs/BATCH_TUNING_GUIDE.md`)
 
 #### 3. CLI 배치 과금 시뮬레이션 명령어
 ```bash
