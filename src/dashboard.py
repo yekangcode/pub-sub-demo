@@ -1556,15 +1556,19 @@ with tab5:
                 generate_traffic(project_id=project_id, topic_id=topic_id, duration_seconds=20)
                 st.success(tr("🎉 20초간 연속 트래픽 전송 완료! 약 2~3분 뒤 GCP 콘솔 차트에 선명한 그래프가 반영됩니다.", "🎉 Continuous traffic sent! Curves will appear in Cloud Console in ~2-3 mins."))
 
-        st.info(
-            tr(
-                "💡 **Cloud Console 'No data available' 안내**:\n"
-                "• Google Cloud Monitoring 시스템 메트릭은 약 **2~3분의 집계 지연(Reporting Latency)**이 있습니다.\n"
-                "• GCP 콘솔 우측 상단 시간 범위를 **1 hour**로 설정하고 1~2분 뒤 새로고침(🔄)하시면 그래프가 나타납니다.",
-                "💡 **Why 'No data available' appears**:\n"
-                "• Cloud Monitoring metrics have a **2-3 min reporting ingestion lag**.\n"
-                "• Set the console time window to **1 hour** and click refresh (🔄) after 1-2 mins.",
-            )
+        st.markdown(
+            f"""
+<div style='background-color: #e8f0fe; border-left: 4px solid #1a73e8; padding: 12px 16px; border-radius: 6px; margin: 12px 0;'>
+  <div style='font-weight: bold; color: #174ea6; font-size: 0.95em; margin-bottom: 6px;'>
+    💡 {tr("Cloud Console 'No data available' 원인 및 해결 안내", "Why 'No data available' appears & How to fix")}
+  </div>
+  <ul style='margin: 0; padding-left: 18px; color: #202124; font-size: 0.9em; line-height: 1.6;'>
+    <li>{tr("<b>메트릭 집계 지연:</b> Google Cloud Monitoring 시스템 메트릭은 약 <b>2 ~ 3분의 수집/집계 지연(Reporting Latency)</b>이 발생합니다.", "<b>Reporting Lag:</b> Cloud Monitoring metrics experience a <b>2 to 3 minute ingestion delay</b>.")}</li>
+    <li>{tr("<b>시간 범위 설정:</b> GCP 콘솔 우측 상단 시간 필터를 <b>1 hour</b>로 설정하고 1 ~ 2분 뒤 <b>새로고침(🔄)</b>하시면 그래프가 정상 표시됩니다.", "<b>Time Window:</b> Set the console time filter to <b>1 hour</b> and click <b>refresh (🔄)</b> after 1 to 2 minutes.")}</li>
+  </ul>
+</div>
+""",
+            unsafe_allow_html=True,
         )
 
     with c_bench2:
