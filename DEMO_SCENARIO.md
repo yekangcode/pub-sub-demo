@@ -441,6 +441,13 @@ gcloud pubsub subscriptions add-iam-policy-binding pubsub-demo-stream-sub \
 gcloud projects add-iam-policy-binding ${PROJECT_ID} \
   --member="serviceAccount:${PUBSUB_SA}" \
   --role="roles/bigquery.dataEditor"
+
+# 4. BigQuery Zero-ETL 구독 생성 보장 (권한 바인딩 후 멱등적 생성)
+gcloud pubsub subscriptions create pubsub-demo-bq-sub \
+  --project="${PROJECT_ID}" \
+  --topic=pubsub-demo-events \
+  --bigquery-table="${PROJECT_ID}:pubsub_demo_analytics.streaming_events" \
+  --write-metadata || true
 ```
 
 ---

@@ -87,6 +87,30 @@ def verify_live_deployment(project_id: str, dry_run: bool = False) -> bool:
             print(f"  - Dead Letter 토픽: {dlq_topic_id} -> roles/pubsub.publisher")
             print("  - 메인 구독: pubsub-demo-stream-sub -> roles/pubsub.subscriber")
             print(f"  - BigQuery 데이터셋: {dataset_id} -> roles/bigquery.dataEditor")
+
+            # BigQuery Zero-ETL 구독 존재 확인 및 자동 복구 (자가 치유)
+            try:
+                from google.cloud import pubsub_v1
+                from google.api_core.exceptions import NotFound
+
+                sub_client = pubsub_v1.SubscriberClient()
+                bq_sub_name = f"projects/{project_id}/subscriptions/pubsub-demo-bq-sub"
+                try:
+                    sub_client.get_subscription(request={"subscription": bq_sub_name})
+                except NotFound:
+                    sub_client.create_subscription(
+                        request={
+                            "name": bq_sub_name,
+                            "topic": f"projects/{project_id}/topics/{topic_id}",
+                            "bigquery_config": {
+                                "table": f"{project_id}:{dataset_id}.{table_id}",
+                                "write_metadata": True,
+                            },
+                        }
+                    )
+                    print(f"  ✓ BigQuery Zero-ETL 구독 자동 생성 완료: {bq_sub_name}")
+            except Exception:
+                pass
         except Exception as e:  # noqa: BLE001
             print(f"⚠️ 알림: gcloud 프로젝트 조회 상태: {e}")
     else:

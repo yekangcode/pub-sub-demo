@@ -129,6 +129,35 @@ def setup_infrastructure(project_id: str, region: str = "us-central1", dry_run: 
         "table": f"{project_id}:{dataset.dataset_id}.streaming_events",
         "write_metadata": True,  # publish_time, message_id 등 메타데이터 자동 파퓰레이션
     }
+
+    # BigQuery 구독 생성에 필수적인 Pub/Sub 서비스 에이전트 권한 사전 바인딩 시도
+    import subprocess
+    try:
+        res = subprocess.run(
+            ["gcloud", "projects", "describe", project_id, "--format=value(projectNumber)"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            p_num = res.stdout.strip()
+            sa = f"serviceAccount:service-{p_num}@gcp-sa-pubsub.iam.gserviceaccount.com"
+            subprocess.run(
+                [
+                    "gcloud",
+                    "projects",
+                    "add-iam-policy-binding",
+                    project_id,
+                    f"--member={sa}",
+                    "--role=roles/bigquery.dataEditor",
+                    "--quiet",
+                ],
+                capture_output=True,
+                check=False,
+            )
+    except Exception:
+        pass
+
     try:
         sub_client.create_subscription(
             request={
