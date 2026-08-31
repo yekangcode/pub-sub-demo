@@ -146,10 +146,10 @@ def setup_infrastructure(project_id: str, region: str = "us-central1", dry_run: 
     print("\n=== GCP 인프라 프로비저닝이 성공적으로 완료되었습니다 ===")
     print("\n--- 🎯 배포 검증을 위한 퀵 커맨드 ---")
     print(f"1. 자동 엔드투엔드 검증 실행: .venv/bin/python3 scripts/verify_gcp_live.py --project_id {project_id}")
-    print("2. Pub/Sub 토픽 목록 확인:     gcloud pubsub topics list --filter='name:pubsub-demo'")
-    print("3. Pub/Sub 구독 목록 확인:     gcloud pubsub subscriptions list --filter='name:pubsub-demo'")
-    print(f"4. Cloud Storage 버킷 확인:    gcloud storage ls gs://{bucket_name}")
-    print(f"5. BigQuery 스트리밍 행 확인:  bq query --use_legacy_sql=false 'SELECT count(*) FROM {dataset_id}.streaming_events'")
+    print(f"2. Pub/Sub 토픽 목록 확인:     gcloud pubsub topics list --project={project_id} --filter='name:pubsub-demo'")
+    print(f"3. Pub/Sub 구독 목록 확인:     gcloud pubsub subscriptions list --project={project_id} --filter='name:pubsub-demo'")
+    print(f"4. Cloud Storage 버킷 확인:    gcloud storage ls --project={project_id} gs://{bucket_name}")
+    print(f"5. BigQuery 스트리밍 행 확인:  bq query --project_id={project_id} --use_legacy_sql=false 'SELECT count(*) FROM {dataset_id}.streaming_events'")
     print("--------------------------------------------------\n")
     return True
 

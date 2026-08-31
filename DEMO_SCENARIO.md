@@ -427,11 +427,13 @@ PUBSUB_SA="service-${PROJECT_NUMBER}@gcp-sa-pubsub.iam.gserviceaccount.com"
 
 # 1. Dead Letter Topic 발행 권한 부여
 gcloud pubsub topics add-iam-policy-binding pubsub-demo-dlq-topic \
+  --project="${PROJECT_ID}" \
   --member="serviceAccount:${PUBSUB_SA}" \
   --role="roles/pubsub.publisher"
 
 # 2. 메인 구독 메시지 확인(Ack) 권한 부여
 gcloud pubsub subscriptions add-iam-policy-binding pubsub-demo-stream-sub \
+  --project="${PROJECT_ID}" \
   --member="serviceAccount:${PUBSUB_SA}" \
   --role="roles/pubsub.subscriber"
 
@@ -525,7 +527,7 @@ gcloud storage ls -l gs://pub-sub-kamo-payloads/payloads/
 
 #### ③ DLQ 격리 토픽에 전송된 손상 메시지 풀링 확인
 ```bash
-gcloud pubsub subscriptions pull pubsub-demo-dlq-sub --auto-ack --limit=5
+gcloud pubsub subscriptions pull pubsub-demo-dlq-sub --project=pub-sub-kamo --auto-ack --limit=5
 ```
 
 ---
