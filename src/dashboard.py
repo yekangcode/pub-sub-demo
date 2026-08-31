@@ -1286,6 +1286,82 @@ def load_bq_inspected_data(target_project_id: str, active_gcp_mode: GCPMode) -> 
     return inspected_list
 
 
+def fetch_cloud_monitoring_summary(target_project_id: str) -> list[dict[str, str]]:
+    """Google Cloud Monitoring REST API를 직접 호출하여 최근 1시간의 핵심 시계열 데이터를 조회합니다."""
+    import json
+    import urllib.request
+    from datetime import datetime, timedelta, timezone
+    import google.auth
+    from google.auth.transport.requests import Request
+
+    try:
+        credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        credentials.refresh(Request())
+    except Exception as e:  # noqa: BLE001
+        return [{"구독 (Subscription)": "오류", "모니터링 지표 (Metric)": "인증 실패", "1시간 누적/최신 측정값": f"{e}", "GCP 브로커 상태": "ADC 확인 필요"}]
+
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(hours=1)
+    start_str = start.strftime("%Y-%m-%dT%H:%M:%SZ")
+    end_str = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    metrics = [
+        ("pull_request_count (동기식 Pull 요청 수)", "pubsub.googleapis.com/subscription/pull_request_count", "건"),
+        ("streaming_pull_response_count (스트리밍 푸시 응답 수)", "pubsub.googleapis.com/subscription/streaming_pull_response_count", "건"),
+        ("open_streaming_pulls (열린 스트림 연결 수)", "pubsub.googleapis.com/subscription/open_streaming_pulls", "개"),
+        ("oldest_unacked_message_age (가장 오래된 미확인 지연)", "pubsub.googleapis.com/subscription/oldest_unacked_message_age", "초"),
+    ]
+
+    records = []
+    target_subs = ["pubsub-demo-sync-sub", "pubsub-demo-stream-sub"]
+
+    for desc, m_type, unit in metrics:
+        url = f"https://monitoring.googleapis.com/v3/projects/{target_project_id}/timeSeries?filter=metric.type%20%3D%20%22{m_type}%22&interval.startTime={start_str}&interval.endTime={end_str}"
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {credentials.token}"})
+        try:
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                data = json.loads(resp.read().decode())
+                sub_values = {s: 0 for s in target_subs}
+                sub_has_data = {s: False for s in target_subs}
+
+                for s in data.get("timeSeries", []):
+                    sub = s.get("resource", {}).get("labels", {}).get("subscription_id", "unknown")
+                    if sub in target_subs:
+                        pts = s.get("points", [])
+                        if pts:
+                            sub_has_data[sub] = True
+                            if "int64Value" in pts[0].get("value", {}):
+                                if "open_streaming" in m_type or "oldest" in m_type:
+                                    sub_values[sub] = int(pts[0]["value"]["int64Value"])
+                                else:
+                                    sub_values[sub] += sum(int(p.get("value", {}).get("int64Value", "0")) for p in pts)
+
+                for sub in target_subs:
+                    val = sub_values[sub]
+                    if not sub_has_data[sub] and "streaming" in m_type and "sync-sub" in sub:
+                        display_val = "0 (스트림 미사용 ✓)"
+                    elif not sub_has_data[sub] and "pull_request" in m_type and "stream-sub" in sub:
+                        display_val = "0 (단발성 Pull 미사용 ✓)"
+                    else:
+                        display_val = f"{val:,} {unit}"
+
+                    records.append({
+                        "구독 (Subscription)": sub,
+                        "모니터링 지표 (Metric)": desc,
+                        "1시간 누적/최신 측정값": display_val,
+                        "GCP 브로커 상태": "✓ 수집 완료" if sub_has_data[sub] else "• 트래픽 유형 미해당 (정상)",
+                    })
+        except Exception as e:  # noqa: BLE001
+            records.append({
+                "구독 (Subscription)": "N/A",
+                "모니터링 지표 (Metric)": desc,
+                "1시간 누적/최신 측정값": f"조회 실패: {e}",
+                "GCP 브로커 상태": "오류",
+            })
+
+    return records
+
+
 # ----------------- TAB 5: LIVE GCP VERIFICATION -----------------
 with tab5:
     st.subheader(tr("실제 Google Cloud 프로젝트 검증 (pub-sub-kamo)", "Live Google Cloud Project Verification (pub-sub-kamo)"))
@@ -1648,6 +1724,56 @@ fetch pubsub_subscription
 | every 1m
 """,
             language="bash",
+        )
+
+    st.markdown("---")
+    st.markdown(f"#### 🛰️ {tr('Cloud Monitoring REST API 실시간 집계 데이터 직접 검증 (Live Verification)', 'Live Cloud Monitoring API Direct Verification')}")
+    st.caption(
+        tr(
+            "GCP 콘솔 UI 검색 없이 Google Cloud Monitoring REST API를 직접 조회하여 실제 수집된 메트릭 시계열(Time Series)을 즉시 교차 검증합니다.",
+            "Directly queries Google Cloud Monitoring REST API to verify live time series metrics without console navigation.",
+        )
+    )
+
+    cm_c1, cm_c2 = st.columns([1.2, 2.8])
+    with cm_c1:
+        if st.button(tr("📡 Cloud Monitoring API 원시 메트릭 조회", "📡 Fetch Cloud Monitoring Metrics API"), use_container_width=True, key="fetch_cm_metrics_btn"):
+            with st.spinner(tr("Google Cloud Monitoring API에서 실시간 시계열 데이터를 인출 중...", "Fetching live time series from Cloud Monitoring API...")):
+                st.session_state["live_cm_metrics"] = fetch_cloud_monitoring_summary(project_id)
+
+    with cm_c2:
+        st.write(tr("최근 1시간 동안 브로커가 수집한 `pull_request_count`, `streaming_pull_response_count`, `open_streaming_pulls` 실제 합계/게이지를 확인합니다.", "View actual sums/gauges collected by GCP broker over the past hour."))
+
+    if "live_cm_metrics" not in st.session_state and gcp_mode == GCPMode.LIVE:
+        st.session_state["live_cm_metrics"] = fetch_cloud_monitoring_summary(project_id)
+
+    if st.session_state.get("live_cm_metrics"):
+        st.dataframe(pd.DataFrame(st.session_state["live_cm_metrics"]), use_container_width=True)
+
+    with st.expander(tr("📋 Cloud Monitoring 콘솔에서 MQL 쿼리로 1초 만에 확인하는 방법", "How to query via MQL in Cloud Console"), expanded=True):
+        st.markdown(
+            f"""
+Google Cloud Console의 **[Cloud Monitoring Metrics Explorer](https://console.cloud.google.com/monitoring/metrics-explorer?project={project_id})**로 이동한 뒤,
+화면 우측 상단의 **`< > MQL`** 버튼을 누르고 아래 쿼리를 입력하면 차트가 즉시 렌더링됩니다:
+
+**1. 동기식 Pull 요청 수 (`pull_request_count`) MQL 쿼리 (Sync-Sub에서만 피크 발생):**
+```sql
+fetch pubsub_subscription
+| metric 'pubsub.googleapis.com/subscription/pull_request_count'
+| filter (resource.subscription_id =~ 'pubsub-demo-.*')
+| within 1h
+| group_by [resource.subscription_id], sum(val())
+```
+
+**2. 스트리밍 응답 푸시 수 (`streaming_pull_response_count`) MQL 쿼리 (Stream-Sub에서만 발생):**
+```sql
+fetch pubsub_subscription
+| metric 'pubsub.googleapis.com/subscription/streaming_pull_response_count'
+| filter (resource.subscription_id =~ 'pubsub-demo-.*')
+| within 1h
+| group_by [resource.subscription_id], sum(val())
+```
+            """
         )
 
 

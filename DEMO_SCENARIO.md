@@ -592,7 +592,28 @@ Google Cloud Console의 **Cloud Pub/Sub 콘솔** 및 **Cloud Monitoring (Metrics
 | **`pubsub.googleapis.com/subscription/oldest_unacked_message_age`** | **폴링 주기만큼 톱니형 상승** | **0초대에 항상 수렴 (초저지연)** | 폴링 대기 유휴 시간(Idle Wait) 제거로 메시지 체류 시간 소멸 |
 | **`pubsub.googleapis.com/subscription/ack_latencies` (P99)** | **~100ms - 150ms** | **~10ms - 20ms (88% 단축)** | HTTP 핸드셰이크 제거 및 연결 재사용 효과 |
 
-##### 3) CLI를 통한 동기식 Pull 직접 테스트:
+##### 3) Cloud Monitoring 콘솔에서 MQL 쿼리로 즉시 차트 확인하는 방법:
+Cloud Monitoring의 [Metrics Explorer](https://console.cloud.google.com/monitoring/metrics-explorer?project=pub-sub-kamo)에서 우측 상단 **`< > MQL`** 버튼을 누르고 아래 쿼리를 입력합니다:
+
+**• 동기식 Pull 요청 수 (`pubsub-demo-sync-sub`에서만 피크 발생)**:
+```sql
+fetch pubsub_subscription
+| metric 'pubsub.googleapis.com/subscription/pull_request_count'
+| filter (resource.subscription_id =~ 'pubsub-demo-.*')
+| within 1h
+| group_by [resource.subscription_id], sum(val())
+```
+
+**• StreamingPull 푸시 응답 수 (`pubsub-demo-stream-sub`에서만 발생)**:
+```sql
+fetch pubsub_subscription
+| metric 'pubsub.googleapis.com/subscription/streaming_pull_response_count'
+| filter (resource.subscription_id =~ 'pubsub-demo-.*')
+| within 1h
+| group_by [resource.subscription_id], sum(val())
+```
+
+##### 4) CLI를 통한 동기식 Pull 직접 테스트:
 ```bash
 # 동기식 단발성 Pull (1회 호출당 HTTP 왕복 핸드셰이크 발생)
 gcloud pubsub subscriptions pull pubsub-demo-sync-sub --project=pub-sub-kamo --auto-ack --limit=5
