@@ -91,9 +91,14 @@ class SyncPullWorker:
         else:
             # [실제 GCP 환경] Google Cloud Pub/Sub pull API 직접 호출
             sub_path = self.subscriber.subscription_path(self.project_id, self.subscription_id)
-            response = self.subscriber.pull(
-                request={"subscription": sub_path, "max_messages": batch_limit}
-            )
+            try:
+                response = self.subscriber.pull(
+                    request={"subscription": sub_path, "max_messages": batch_limit},
+                    timeout=2.0,
+                )
+            except Exception:
+                # 대기 중인 메시지가 없거나 폴링 타임아웃 시 빈 리스트 반환
+                return []
 
             ack_ids = []
             elapsed_ms = (time.perf_counter() - start_time) * 1000.0
