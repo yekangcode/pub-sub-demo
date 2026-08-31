@@ -47,6 +47,7 @@ class PublishResult:
     schema_fingerprint: str = ""    # 스키마 거버넌스용 SHA-256 핑거프린트
     pod_env_vars: dict[str, str] = field(default_factory=dict)  # GKE Pod 환경 메타데이터
     publish_latency_ms: float = 0.0 # 발행 소요 시간 (밀리초)
+    pubsub_wire_bytes: int = 0      # Pub/Sub 브로커 와이어로 실제 전송된 바이트 수 (Dual-Path 절감 측정용)
 
 
 class DualPathPublisher:
@@ -186,4 +187,5 @@ class DualPathPublisher:
             schema_fingerprint=self._schema_fingerprint,
             pod_env_vars=pod_env,
             publish_latency_ms=latency_ms,
+            pubsub_wire_bytes=len(serialized_data),
         )

@@ -59,6 +59,8 @@ def test_large_payload_gcs_offload_routing():
 
     assert result.path == PublishPath.GCS_OFFLOAD
     assert result.payload_uri == f"gs://{bucket_name}/payloads/evt-large-1.bin"
+    assert result.pubsub_wire_bytes < 500  # Only metadata and GCS URI pointer sent over Pub/Sub wire!
+    assert result.pubsub_wire_bytes < result.uncompressed_bytes
 
     blob_bytes = client.download_blob(bucket_name, "payloads/evt-large-1.bin")
     assert len(blob_bytes) > 0

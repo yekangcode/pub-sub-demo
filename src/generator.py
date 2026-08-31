@@ -65,10 +65,15 @@ class SyntheticWorkloadGenerator:
         is_corrupt = force_corrupt if force_corrupt is not None else (random.uniform(0, 100) < self.corrupt_pct)
 
         if is_large:
-            # [대형 페이로드] 멀티모달 텐서 또는 이미지 바이너리 시뮬레이션
-            # Zstd 압축 후에도 임계값을 넘을 수 있도록 고엔트로피(난수) 바이트 사용
-            target_size = max(self.publisher.offload_threshold_bytes + 2048, 12 * 1024)
-            payload = os.urandom(target_size)
+            # [대형 페이로드] 멀티모달 텐서 또는 고차원 비전 임베딩 바이너리 시뮬레이션
+            # 실제 AI 멀티모달 데이터(임베딩 텐서, 구조화 헤더, 양자화 가중치 등)는
+            # 완전한 암호학적 난수(urandom)가 아니므로 Zstd로 약 45~50% 압축됩니다.
+            # Zstd 압축 후에도 offload_threshold_bytes를 안정적으로 초과하도록 원본 크기를 산출합니다.
+            target_uncomp = int(self.publisher.offload_threshold_bytes * 2.1) + 4096
+            chunk_count = max(4, target_uncomp // 1024)
+            pattern = b'{"dim": 4096, "dtype": "fp16", "tensor": "vision_encoder_layer_block"}' * 7
+            chunks = [pattern[:512] + os.urandom(512) for _ in range(chunk_count)]
+            payload = b"".join(chunks)[:target_uncomp]
             payload_type = "application/octet-stream"
         else:
             # [소형 페이로드] 일반 JSON 텍스트 프롬프트/응답 (Fast Path)

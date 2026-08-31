@@ -37,9 +37,9 @@ def test_metrics_collector_88_percent_reduction_calculation():
 def test_metrics_collector_dual_path_counters():
     collector = MetricsCollector()
 
-    collector.record_path("fast", uncompressed=1000, compressed=200)
-    collector.record_path("fast", uncompressed=2000, compressed=400)
-    collector.record_path("gcs_offload", uncompressed=10000, compressed=3000)
+    collector.record_path("fast", uncompressed=1000, compressed=200, pubsub_wire_bytes=250)
+    collector.record_path("fast", uncompressed=2000, compressed=400, pubsub_wire_bytes=450)
+    collector.record_path("gcs_offload", uncompressed=10000, compressed=3000, pubsub_wire_bytes=150)
 
     counters = collector.get_path_counters()
     assert counters["fast_count"] == 2
@@ -48,3 +48,5 @@ def test_metrics_collector_dual_path_counters():
     assert counters["total_compressed_bytes"] == 3600
     assert counters["bytes_saved"] == 9400
     assert counters["overall_savings_percent"] > 70.0
+    assert counters["pubsub_wire_bytes_saved"] == 13000 - (250 + 450 + 150)
+    assert counters["pubsub_wire_savings_percent"] > 90.0

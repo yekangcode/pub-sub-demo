@@ -10,6 +10,7 @@ Sync Pull 대비 StreamingPull의 88% 지연 시간 절감률 및 Zstd 압축을
 
 import threading
 from collections import defaultdict
+from typing import Any
 
 import numpy as np
 
@@ -26,21 +27,32 @@ class MetricsCollector:
         self._offload_count = 0
         self._total_uncompressed_bytes = 0
         self._total_compressed_bytes = 0
+        self._total_pubsub_wire_bytes = 0
 
     def record_latency(self, label: str, latency_ms: float) -> None:
         """지정된 라벨(label) 아래에 개별 메시지의 지연 시간(밀리초)을 기록합니다."""
         with self._lock:
             self._latencies[label].append(float(latency_ms))
 
-    def record_path(self, path: str, uncompressed: int, compressed: int) -> None:
-        """이중 경로 이벤트의 전송 경로(fast vs offload) 및 원본/압축 바이트 크기를 기록합니다."""
+    def record_path(
+        self,
+        path: str,
+        uncompressed: int,
+        compressed: int,
+        pubsub_wire_bytes: int | None = None,
+    ) -> None:
+        """이중 경로 이벤트의 전송 경로(fast vs offload) 및 원본/압축/와이어 바이트 크기를 기록합니다."""
         with self._lock:
             if path in ("fast", "Fast"):
                 self._fast_count += 1
+                wire = pubsub_wire_bytes if pubsub_wire_bytes is not None else compressed
             else:
                 self._offload_count += 1
+                # GCS 오프로드 시 메시지 본문은 비우고 포인터 URI와 메타데이터만 전송 (~150B)
+                wire = pubsub_wire_bytes if pubsub_wire_bytes is not None else 150
             self._total_uncompressed_bytes += uncompressed
             self._total_compressed_bytes += compressed
+            self._total_pubsub_wire_bytes += wire
 
     def get_stats(self, label: str) -> dict[str, float]:
         """해당 라벨에 수집된 샘플들을 바탕으로 P50, P90, P95, P99 등 분위수 통계를 계산합니다."""
@@ -92,24 +104,34 @@ class MetricsCollector:
             "optimized_count": o_stats["count"],
         }
 
-    def get_path_counters(self) -> dict[str, float]:
-        """이중 경로 이벤트 수, 총 전송 데이터량 및 Zstd를 통한 네트워크 대역폭 절감률을 반환합니다."""
+    def get_path_counters(self) -> dict[str, Any]:
+        """이중 경로 이벤트 수, Zstd 페이로드 압축 절감률, 그리고 Dual-Path Pub/Sub 네트워크 절감률을 반환합니다."""
         with self._lock:
             fast = self._fast_count
             offload = self._offload_count
             uncompressed = self._total_uncompressed_bytes
             compressed = self._total_compressed_bytes
+            wire = self._total_pubsub_wire_bytes
 
+        # 1. Zstandard 페이로드 압축 자체를 통한 절감량
         saved = max(0, uncompressed - compressed)
         savings_percent = (saved / uncompressed * 100.0) if uncompressed > 0 else 0.0
+
+        # 2. Dual-Path 패턴을 통한 Pub/Sub 브로커 네트워크 대역폭 절감률
+        # (대형 페이로드가 GCS로 오프로드되어 브로커 네트워크에는 120~150B 포인터만 전송됨)
+        pubsub_saved = max(0, uncompressed - wire)
+        pubsub_wire_savings_percent = (pubsub_saved / uncompressed * 100.0) if uncompressed > 0 else 0.0
 
         return {
             "fast_count": fast,
             "offload_count": offload,
             "total_uncompressed_bytes": uncompressed,
             "total_compressed_bytes": compressed,
+            "total_pubsub_wire_bytes": wire,
             "bytes_saved": saved,
             "overall_savings_percent": round(savings_percent, 2),
+            "pubsub_wire_bytes_saved": pubsub_saved,
+            "pubsub_wire_savings_percent": round(pubsub_wire_savings_percent, 2),
         }
 
     def reset(self) -> None:
@@ -120,3 +142,4 @@ class MetricsCollector:
             self._offload_count = 0
             self._total_uncompressed_bytes = 0
             self._total_compressed_bytes = 0
+            self._total_pubsub_wire_bytes = 0

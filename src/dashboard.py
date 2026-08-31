@@ -266,7 +266,11 @@ with tab2:
             results = generator.generate_batch(count=batch_size)
             for res in results:
                 st.session_state.metrics.record_path(
-                    res.path.value, res.uncompressed_bytes, res.compressed_bytes
+                    res.path.value, res.uncompressed_bytes, res.compressed_bytes, res.pubsub_wire_bytes
+                )
+                dual_path_savings = round(
+                    ((res.uncompressed_bytes - res.pubsub_wire_bytes) / res.uncompressed_bytes * 100.0)
+                    if res.uncompressed_bytes > 0 else 0.0, 1
                 )
                 st.session_state.event_log.append(
                     {
@@ -274,7 +278,9 @@ with tab2:
                         "path": res.path.value,
                         "uncompressed_bytes": res.uncompressed_bytes,
                         "compressed_bytes": res.compressed_bytes,
-                        "savings_%": round(res.reduction_percentage, 1),
+                        "pubsub_wire_bytes": res.pubsub_wire_bytes,
+                        "zstd_savings_%": round(res.reduction_percentage, 1),
+                        "pubsub_savings_%": dual_path_savings,
                         "payload_uri": res.payload_uri if res.payload_uri else "inline",
                         "fingerprint": res.schema_fingerprint,
                         "timestamp": time.strftime("%H:%M:%S"),
@@ -286,7 +292,11 @@ with tab2:
         if st.button(tr("🚨 대용량 멀티모달 페이로드 1건 주입 (>8MB)", "🚨 Inject 1 Large Multimodal Payload (>8MB)"), use_container_width=True):
             res = generator.generate_single_event(force_large=True)
             st.session_state.metrics.record_path(
-                res.path.value, res.uncompressed_bytes, res.compressed_bytes
+                res.path.value, res.uncompressed_bytes, res.compressed_bytes, res.pubsub_wire_bytes
+            )
+            dual_path_savings = round(
+                ((res.uncompressed_bytes - res.pubsub_wire_bytes) / res.uncompressed_bytes * 100.0)
+                if res.uncompressed_bytes > 0 else 0.0, 1
             )
             st.session_state.event_log.append(
                 {
@@ -294,7 +304,9 @@ with tab2:
                     "path": res.path.value,
                     "uncompressed_bytes": res.uncompressed_bytes,
                     "compressed_bytes": res.compressed_bytes,
-                    "savings_%": round(res.reduction_percentage, 1),
+                    "pubsub_wire_bytes": res.pubsub_wire_bytes,
+                    "zstd_savings_%": round(res.reduction_percentage, 1),
+                    "pubsub_savings_%": dual_path_savings,
                     "payload_uri": res.payload_uri,
                     "fingerprint": res.schema_fingerprint,
                     "timestamp": time.strftime("%H:%M:%S"),
@@ -302,18 +314,42 @@ with tab2:
             )
             st.warning(tr(f"대용량 페이로드 {res.event_id}를 Cloud Storage로 즉시 오프로드했습니다!", f"Offloaded large payload {res.event_id} directly to Cloud Storage!"))
 
+    st.markdown(
+        f"""
+        <div style="background-color: #0f2027; padding: 12px 18px; border-radius: 8px; border-left: 4px solid #00c6ff; margin: 12px 0 16px 0;">
+            <span style="font-weight: 600; color: #00c6ff;">💡 {tr("네트워크 대역폭 절감 2대 축 (Why Dual-Path?)", "2 Dimensions of Network Savings (Why Dual-Path?)")}:</span>
+            <ul style="margin: 6px 0 0 18px; color: #cfd8dc; font-size: 0.9em;">
+                <li><strong>{tr("1. Dual-Path 브로커 트래픽 절감 (98%+)", "1. Dual-Path Broker Wire Savings (98%+)")}</strong>: {tr("8MB 이상의 대용량 텐서/이미지는 Pub/Sub 브로커를 우회하여 GCS에 저장되며, 브로커에는 150B 포인터만 전송되어 브로커 과금 및 네트워크 병목을 99% 이상 제거합니다.", "Large payloads (>=8MB) bypass the Pub/Sub broker and reside in GCS; only a ~150B pointer travels over Pub/Sub, cutting broker bandwidth by >99%.")}</li>
+                <li><strong>{tr("2. Zstandard 페이로드 압축 절감 (45~80%)", "2. Zstandard Payload Compression (45~80%)")}</strong>: {tr("텍스트 프롬프트는 ~80%, 멀티모달 임베딩 텐서는 ~50%의 무손실 바이트 압축을 달성하여 스토리지 및 네트워크 전송 비용을 최소화합니다.", "Text prompts achieve ~80% compression while multimodal tensors achieve ~50% lossless compression.")}</li>
+            </ul>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     counters = st.session_state.metrics.get_path_counters()
     m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-    m_col1.metric(tr("패스트 패스 이벤트 (< 8MB)", "Fast Path Events (< 8MB)"), counters["fast_count"])
-    m_col2.metric(tr("GCS 오프로드 이벤트 (>= 8MB)", "GCS Offload Events (>= 8MB)"), counters["offload_count"])
+    m_col1.metric(
+        tr("패스트 패스 이벤트 (< 8MB)", "Fast Path Events (< 8MB)"),
+        f"{counters['fast_count']} {tr('건', 'events')}",
+        help=tr("Pub/Sub 인라인으로 즉시 고속 전송된 이벤트", "Events transmitted inline via Pub/Sub"),
+    )
+    m_col2.metric(
+        tr("GCS 오프로드 이벤트 (>= 8MB)", "GCS Offload Events (>= 8MB)"),
+        f"{counters['offload_count']} {tr('건', 'events')}",
+        help=tr("Cloud Storage로 오프로드 후 포인터만 전송된 대용량 이벤트", "Large events offloaded to Cloud Storage with lightweight pointer"),
+    )
     m_col3.metric(
-        tr("절감된 네트워크 대역폭", "Network Bandwidth Saved"),
-        f"{counters['bytes_saved'] / 1024:.1f} KB",
-        f"{counters['overall_savings_percent']}% {tr('절감', 'reduction')}",
+        tr("🎯 Pub/Sub 브로커 트래픽 절감", "Pub/Sub Broker Wire Saved"),
+        f"{counters['pubsub_wire_bytes_saved'] / 1024:.1f} KB",
+        f"-{counters['pubsub_wire_savings_percent']}% {tr('브로커 절감', 'wire saved')}",
+        help=tr("이중 경로(Claim-Check) 패턴을 통해 대형 페이로드가 GCS로 빠져나가 Pub/Sub 브로커 네트워크에서 절감된 대역폭 (8MB -> ~150B 포인터)", "Bandwidth saved on Pub/Sub broker via Claim-Check offloading"),
     )
     m_col4.metric(
-        tr("총 전송 페이로드", "Total Payloads Transferred"),
-        f"{counters['total_uncompressed_bytes'] / 1024:.1f} KB",
+        tr("📦 Zstd 페이로드 압축 절감", "Zstd Compression Saved"),
+        f"{counters['bytes_saved'] / 1024:.1f} KB",
+        f"-{counters['overall_savings_percent']}% {tr('압축 절감', 'compressed')}",
+        help=tr("Zstandard 압축 알고리즘을 통해 줄어든 순수 페이로드 바이트 크기", "Pure payload bytes saved via Zstandard compression"),
     )
 
     if st.session_state.event_log:
