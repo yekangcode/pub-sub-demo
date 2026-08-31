@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 PROTO_DIR = ROOT_DIR / "proto"
-OUT_DIR = ROOT_DIR / "src" / "proto"
+OUT_DIR = ROOT_DIR / "src" / "proto_gen"
 
 # 출력 대상 디렉토리 생성 및 패키지 초기화 파일(__init__.py) 보장
 OUT_DIR.mkdir(parents=True, exist_ok=True)

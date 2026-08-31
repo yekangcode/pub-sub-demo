@@ -2,7 +2,7 @@ import time
 
 
 def test_proto_serialization_and_deserialization():
-    from src.proto import streaming_event_pb2
+    from src.proto_gen import streaming_event_pb2
 
     event = streaming_event_pb2.StreamingEvent(
         event_id="evt-12345",

@@ -34,7 +34,7 @@ cd /usr/local/google/home/kangrenee/pub-sub-demo
 ⚡ Starting Google Cloud Pub/Sub Anthropic Architecture Demo
 ============================================================
 Compiling Protocol Buffers schema...
-Schema compiled successfully: src/proto/streaming_event_pb2.py
+Schema compiled successfully: src/proto_gen/streaming_event_pb2.py
 Launching Streamlit Web Dashboard...
 Open your browser at: http://localhost:8501
 

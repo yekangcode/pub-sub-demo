@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.compression import CompressionManager
-from src.proto import streaming_event_pb2
+from src.proto_gen import streaming_event_pb2
 
 
 @dataclass

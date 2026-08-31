@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 
 from src.compression import CompressionManager
 from src.gcp_client import GCPClientInterface
-from src.proto import streaming_event_pb2
+from src.proto_gen import streaming_event_pb2
 from src.publisher import PublishPath
 
 

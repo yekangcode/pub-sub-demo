@@ -20,7 +20,7 @@ from typing import Any
 
 from src.compression import CompressionManager
 from src.gcp_client import GCPClientInterface
-from src.proto import streaming_event_pb2
+from src.proto_gen import streaming_event_pb2
 
 # Anthropic 프로덕션 패턴: Pub/Sub 10MB 한도 도달 전 안전 마진을 둔 8MB 임계값
 DEFAULT_OFFLOAD_THRESHOLD_BYTES = 8 * 1024 * 1024

@@ -12,8 +12,11 @@ import sys
 import time
 from pathlib import Path
 
-# Ensure repository root is in sys.path when executed via `streamlit run src/dashboard.py`
+# Ensure repository root is in sys.path and purge src directory from sys.path to prevent shadowing
 ROOT_DIR = Path(__file__).resolve().parent.parent
+SRC_DIR = Path(__file__).resolve().parent
+while str(SRC_DIR) in sys.path:
+    sys.path.remove(str(SRC_DIR))
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 

@@ -41,7 +41,7 @@ def test_generator_injects_corruption_on_demand():
     assert len(results) == 5
 
     # All published events should have is_corrupted set to True in the message proto
-    from src.proto import streaming_event_pb2
+    from src.proto_gen import streaming_event_pb2
 
     messages = client.get_published_messages(topic_id)
     assert len(messages) >= 5
