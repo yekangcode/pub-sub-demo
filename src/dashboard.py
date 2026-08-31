@@ -238,15 +238,26 @@ st.markdown(
 )
 
 # Tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs(
-    [
-        tr("🏛️ 아키텍처 개요", "🏛️ Architecture Overview"),
-        tr("📦 1. 이중 경로 수집 & 압축", "📦 1. Dual-Path Ingestion & Compression"),
-        tr("🚀 2. StreamingPull 지연 시간 절감 (88%)", "🚀 2. StreamingPull vs Sync Pull (88% Latency Drop)"),
-        tr("🛡️ 3. 데이터 포맷 최적화 & DLQ", "🛡️ 3. Binary Schema Optimization & DLQ"),
-        tr("🔍 4. 실제 GCP 프로젝트 라이브 검증", "🔍 4. Live GCP Project Verification"),
-    ]
-)
+if gcp_mode == GCPMode.LIVE:
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        [
+            tr("🏛️ 아키텍처 개요", "🏛️ Architecture Overview"),
+            tr("📦 1. 이중 경로 수집 & 압축", "📦 1. Dual-Path Ingestion & Compression"),
+            tr("🚀 2. StreamingPull 지연 시간 절감 (88%)", "🚀 2. StreamingPull vs Sync Pull (88% Latency Drop)"),
+            tr("🛡️ 3. 데이터 포맷 최적화 & DLQ", "🛡️ 3. Binary Schema Optimization & DLQ"),
+            tr("🔍 4. 실제 GCP 프로젝트 라이브 검증", "🔍 4. Live GCP Project Verification"),
+        ]
+    )
+else:
+    tab1, tab2, tab3, tab4 = st.tabs(
+        [
+            tr("🏛️ 아키텍처 개요", "🏛️ Architecture Overview"),
+            tr("📦 1. 이중 경로 수집 & 압축", "📦 1. Dual-Path Ingestion & Compression"),
+            tr("🚀 2. StreamingPull 지연 시간 절감 (88%)", "🚀 2. StreamingPull vs Sync Pull (88% Latency Drop)"),
+            tr("🛡️ 3. 데이터 포맷 최적화 & DLQ", "🛡️ 3. Binary Schema Optimization & DLQ"),
+        ]
+    )
+    tab5 = None
 
 # ----------------- TAB 1: ARCHITECTURE OVERVIEW -----------------
 with tab1:
@@ -1363,423 +1374,424 @@ def fetch_cloud_monitoring_summary(target_project_id: str) -> list[dict[str, str
 
 
 # ----------------- TAB 5: LIVE GCP VERIFICATION -----------------
-with tab5:
-    st.subheader(tr("실제 Google Cloud 프로젝트 검증 (pub-sub-kamo)", "Live Google Cloud Project Verification (pub-sub-kamo)"))
-    st.markdown(
-        f"**{tr('대상 프로젝트', 'Target Project')}**: `{project_id}` | "
-        f"**{tr('현재 모드', 'Active Mode')}**: `{gcp_mode.value.upper()}`"
-    )
-
-    v_col1, v_col2 = st.columns(2)
-    with v_col1:
-        st.markdown(f"#### 1. {tr('인프라 프로비저닝 & IAM 서비스 계정 권한 점검', 'Infra Provisioning & IAM Service Agent Check')}")
-        st.info(
+if tab5 is not None:
+    with tab5:
+        st.subheader(tr("실제 Google Cloud 프로젝트 검증 (pub-sub-kamo)", "Live Google Cloud Project Verification (pub-sub-kamo)"))
+        st.markdown(
+            f"**{tr('대상 프로젝트', 'Target Project')}**: `{project_id}` | "
+            f"**{tr('현재 모드', 'Active Mode')}**: `{gcp_mode.value.upper()}`"
+        )
+    
+        v_col1, v_col2 = st.columns(2)
+        with v_col1:
+            st.markdown(f"#### 1. {tr('인프라 프로비저닝 & IAM 서비스 계정 권한 점검', 'Infra Provisioning & IAM Service Agent Check')}")
+            st.info(
+                """
+            **Pub/Sub Service Agent**: `service-PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com`
+            - **DLQ Topic**: `roles/pubsub.publisher`
+            - **Main Subscription**: `roles/pubsub.subscriber`
+            - **BigQuery Dataset**: `roles/bigquery.dataEditor`
             """
-        **Pub/Sub Service Agent**: `service-PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com`
-        - **DLQ Topic**: `roles/pubsub.publisher`
-        - **Main Subscription**: `roles/pubsub.subscriber`
-        - **BigQuery Dataset**: `roles/bigquery.dataEditor`
-        """
-        )
-        if st.button(tr("⚡ 1-Click 엔드투엔드 전체 아키텍처 자동 검증", "⚡ Run 1-Click End-to-End Live Verification"), use_container_width=True):
-            with st.spinner(tr("5대 아키텍처 항목을 순차 검증 중...", "Verifying 5 architecture components...")):
-                from scripts.verify_gcp_live import verify_live_deployment
-
-                is_dry = gcp_mode == GCPMode.MOCK
-                res = verify_live_deployment(project_id=project_id, dry_run=is_dry)
-                if res:
-                    st.success(
-                        tr(
-                            "🎉 5대 핵심 아키텍처 항목 검증이 모두 성공적으로 완료되었습니다!",
-                            "🎉 All 5 core architecture verification checks passed successfully!",
+            )
+            if st.button(tr("⚡ 1-Click 엔드투엔드 전체 아키텍처 자동 검증", "⚡ Run 1-Click End-to-End Live Verification"), use_container_width=True):
+                with st.spinner(tr("5대 아키텍처 항목을 순차 검증 중...", "Verifying 5 architecture components...")):
+                    from scripts.verify_gcp_live import verify_live_deployment
+    
+                    is_dry = gcp_mode == GCPMode.MOCK
+                    res = verify_live_deployment(project_id=project_id, dry_run=is_dry)
+                    if res:
+                        st.success(
+                            tr(
+                                "🎉 5대 핵심 아키텍처 항목 검증이 모두 성공적으로 완료되었습니다!",
+                                "🎉 All 5 core architecture verification checks passed successfully!",
+                            )
                         )
-                    )
-
-    with v_col2:
-        st.markdown(f"#### 2. {tr('BigQuery Zero-ETL 스트리밍 실시간 수집 쿼리 실행', 'BigQuery Zero-ETL Ingestion Query')}")
-        st.write(
+    
+        with v_col2:
+            st.markdown(f"#### 2. {tr('BigQuery Zero-ETL 스트리밍 실시간 수집 쿼리 실행', 'BigQuery Zero-ETL Ingestion Query')}")
+            st.write(
+                tr(
+                    "Dataflow 없이 Pub/Sub 브로커가 BigQuery로 직접 수집한 Zstd 압축 Protobuf 바이너리를 실시간 쿼리하여 캐시를 갱신합니다.",
+                    "Query Zstd-compressed Protobuf payloads streamed directly into BigQuery without Dataflow.",
+                )
+            )
+            if st.button(tr("🔄 BigQuery 쿼리 실행 및 최신 데이터 갱신", "🔄 Run BigQuery Query & Refresh Cache"), use_container_width=True, key="bq_refresh_btn"):
+                st.session_state["bq_inspected"] = load_bq_inspected_data(project_id, gcp_mode)
+                st.success(tr("✓ BigQuery 최신 적재 데이터 조회 및 갱신 완료!", "✓ BigQuery data refreshed!"))
+    
+        # ----------------- SECTION 3: BIGQUERY ZSTD & PROTOBUF DECOMPRESSION INSPECTION -----------------
+        st.markdown("---")
+        st.markdown(
+            f"### 3. 🔬 {tr('BigQuery 적재 데이터 Zstd 압축 해제 & Protobuf 역직렬화 심층 분석 (Before vs After)', 'BigQuery Zstd Decompression & Protobuf Deserialization Deep Dive (Before vs After)')}"
+        )
+        st.caption(
             tr(
-                "Dataflow 없이 Pub/Sub 브로커가 BigQuery로 직접 수집한 Zstd 압축 Protobuf 바이너리를 실시간 쿼리하여 캐시를 갱신합니다.",
-                "Query Zstd-compressed Protobuf payloads streamed directly into BigQuery without Dataflow.",
+                "BigQuery에 저장된 원시 바이너리(Bytes)를 Zstd 알고리즘으로 압축 해제하고 Protocol Buffers 스키마로 복원하여 압축 전/후 용량 및 원본 텍스트를 정밀 비교합니다.",
+                "Decompresses raw bytes stored in BigQuery via Zstd and deserializes Protocol Buffers to compare before/after size and payload text.",
             )
         )
-        if st.button(tr("🔄 BigQuery 쿼리 실행 및 최신 데이터 갱신", "🔄 Run BigQuery Query & Refresh Cache"), use_container_width=True, key="bq_refresh_btn"):
+    
+        if not st.session_state.get("bq_inspected"):
             st.session_state["bq_inspected"] = load_bq_inspected_data(project_id, gcp_mode)
-            st.success(tr("✓ BigQuery 최신 적재 데이터 조회 및 갱신 완료!", "✓ BigQuery data refreshed!"))
-
-    # ----------------- SECTION 3: BIGQUERY ZSTD & PROTOBUF DECOMPRESSION INSPECTION -----------------
-    st.markdown("---")
-    st.markdown(
-        f"### 3. 🔬 {tr('BigQuery 적재 데이터 Zstd 압축 해제 & Protobuf 역직렬화 심층 분석 (Before vs After)', 'BigQuery Zstd Decompression & Protobuf Deserialization Deep Dive (Before vs After)')}"
-    )
-    st.caption(
-        tr(
-            "BigQuery에 저장된 원시 바이너리(Bytes)를 Zstd 알고리즘으로 압축 해제하고 Protocol Buffers 스키마로 복원하여 압축 전/후 용량 및 원본 텍스트를 정밀 비교합니다.",
-            "Decompresses raw bytes stored in BigQuery via Zstd and deserializes Protocol Buffers to compare before/after size and payload text.",
+    
+        all_inspected = st.session_state["bq_inspected"]
+    
+        # 1-Click Featured Path Examples
+        st.markdown(f"#### 🎯 {tr('대표 전송 경로(Path) 1-Click 예시 바로보기', '1-Click Featured Path Examples')}")
+        ex_c1, ex_c2 = st.columns(2)
+        with ex_c1:
+            if st.button(tr("⚡ [예시 1] Fast Path (<8MB) 대표 이벤트 (evt-small-001)", "⚡ [Ex 1] Fast Path (<8MB) Sample (evt-small-001)"), use_container_width=True):
+                st.session_state["target_event_id"] = "evt-small-001"
+                st.session_state["target_path_filter"] = tr("⚡ Fast Path (<8MB)", "⚡ Fast Path (<8MB)")
+        with ex_c2:
+            if st.button(tr("📦 [예시 2] GCS Claim-Check (>=8MB) 대표 이벤트 (evt-large-001)", "📦 [Ex 2] GCS Claim-Check (>=8MB) Sample (evt-large-001)"), use_container_width=True):
+                st.session_state["target_event_id"] = "evt-large-001"
+                st.session_state["target_path_filter"] = tr("📦 GCS Claim-Check (>=8MB)", "📦 GCS Claim-Check (>=8MB)")
+    
+        filter_options = [
+            tr("전체 (All)", "All"),
+            tr("⚡ Fast Path (<8MB)", "⚡ Fast Path (<8MB)"),
+            tr("📦 GCS Claim-Check (>=8MB)", "📦 GCS Claim-Check (>=8MB)"),
+        ]
+        active_filter_idx = 0
+        if st.session_state.get("target_path_filter") in filter_options:
+            active_filter_idx = filter_options.index(st.session_state["target_path_filter"])
+    
+        path_filter = st.radio(
+            tr("경로별 필터링", "Filter by Routing Path"),
+            filter_options,
+            index=active_filter_idx,
+            horizontal=True,
         )
-    )
-
-    if not st.session_state.get("bq_inspected"):
-        st.session_state["bq_inspected"] = load_bq_inspected_data(project_id, gcp_mode)
-
-    all_inspected = st.session_state["bq_inspected"]
-
-    # 1-Click Featured Path Examples
-    st.markdown(f"#### 🎯 {tr('대표 전송 경로(Path) 1-Click 예시 바로보기', '1-Click Featured Path Examples')}")
-    ex_c1, ex_c2 = st.columns(2)
-    with ex_c1:
-        if st.button(tr("⚡ [예시 1] Fast Path (<8MB) 대표 이벤트 (evt-small-001)", "⚡ [Ex 1] Fast Path (<8MB) Sample (evt-small-001)"), use_container_width=True):
-            st.session_state["target_event_id"] = "evt-small-001"
-            st.session_state["target_path_filter"] = tr("⚡ Fast Path (<8MB)", "⚡ Fast Path (<8MB)")
-    with ex_c2:
-        if st.button(tr("📦 [예시 2] GCS Claim-Check (>=8MB) 대표 이벤트 (evt-large-001)", "📦 [Ex 2] GCS Claim-Check (>=8MB) Sample (evt-large-001)"), use_container_width=True):
-            st.session_state["target_event_id"] = "evt-large-001"
-            st.session_state["target_path_filter"] = tr("📦 GCS Claim-Check (>=8MB)", "📦 GCS Claim-Check (>=8MB)")
-
-    filter_options = [
-        tr("전체 (All)", "All"),
-        tr("⚡ Fast Path (<8MB)", "⚡ Fast Path (<8MB)"),
-        tr("📦 GCS Claim-Check (>=8MB)", "📦 GCS Claim-Check (>=8MB)"),
-    ]
-    active_filter_idx = 0
-    if st.session_state.get("target_path_filter") in filter_options:
-        active_filter_idx = filter_options.index(st.session_state["target_path_filter"])
-
-    path_filter = st.radio(
-        tr("경로별 필터링", "Filter by Routing Path"),
-        filter_options,
-        index=active_filter_idx,
-        horizontal=True,
-    )
-
-    if "Fast Path" in path_filter:
-        inspected = [x for x in all_inspected if not x.is_gcs_claim_check]
-    elif "GCS" in path_filter:
-        inspected = [x for x in all_inspected if x.is_gcs_claim_check]
-    else:
-        inspected = all_inspected
-
-    if not inspected:
-        st.info(tr("선택한 필터 조건에 해당하는 레코드가 없어 전체 레코드를 표시합니다.", "No records for filter; displaying all."))
-        inspected = all_inspected
-
-    total_stored = sum(item.raw_bytes_len for item in inspected)
-    total_restored = sum(item.uncompressed_payload_bytes for item in inspected)
-    total_comp_payloads = sum(item.compressed_payload_bytes for item in inspected)
-    avg_red = ((total_restored - total_comp_payloads) / total_restored * 100.0) if total_restored > 0 else 0.0
-
-    m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        st.metric(tr("표시된 스트리밍 레코드", "Displayed Records"), f"{len(inspected)}건")
-    with m2:
-        st.metric(tr("BigQuery 저장 총 크기", "Total Stored Size"), f"{total_stored:,} B", help=tr("Zstd 압축 및 Protobuf 직렬화된 실제 저장 용량", "Actual stored size in BigQuery"))
-    with m3:
-        st.metric(tr("복원된 원본 총 크기", "Total Restored Size"), f"{total_restored:,} B", help=tr("압축 해제된 순수 원본 텍스트/데이터 용량", "Total decompressed payload size"))
-    with m4:
-        st.metric(tr("평균 대역폭/용량 절감률", "Avg Data Reduction"), f"{avg_red:.1f}%", delta=f"-{avg_red:.1f}%")
-
-    # 1. Summary DataFrame
-    summary_rows = [
-        {
-            tr("메시지 ID", "Message ID"): item.message_id,
-            tr("이벤트 ID", "Event ID"): item.event_id,
-            tr("전송 경로", "Path"): "📦 GCS Offload" if item.is_gcs_claim_check else "⚡ Fast Path",
-            tr("출처", "Source"): item.source,
-            tr("수집 시각", "Publish Time"): item.publish_time,
-            tr("저장 크기", "Stored Size"): f"{item.raw_bytes_len:,} B",
-            tr("복원 크기", "Restored Size"): f"{item.uncompressed_payload_bytes:,} B",
-            tr("절감률", "Reduction"): f"{item.reduction_percent:.1f}%",
-            tr("Zstd/헤더 상태", "Header Status"): "✓ Claim-Check" if item.is_gcs_claim_check else ("✓ Zstd 감지" if item.is_zstd_compressed else "• 미압축"),
-        }
-        for item in inspected
-    ]
-    st.dataframe(pd.DataFrame(summary_rows), use_container_width=True)
-
-    # 2. Detailed Before vs After Card
-    st.markdown(f"#### 🔍 {tr('개별 이벤트 전/후 (Before vs After) 상세 디코딩 뷰어', 'Event Before vs After Inspection Viewer')}")
-
-    # Auto-select target event if set
-    default_idx = 0
-    if st.session_state.get("target_event_id"):
-        for i, x in enumerate(inspected):
-            if x.event_id == st.session_state["target_event_id"]:
-                default_idx = i
-                break
-
-    selected_idx = st.selectbox(
-        tr("분석할 이벤트 선택", "Select Event to Inspect"),
-        range(len(inspected)),
-        index=default_idx,
-        format_func=lambda i: f"[{i+1}] {'📦 [GCS Offload]' if inspected[i].is_gcs_claim_check else '⚡ [Fast Path]'} Event: {inspected[i].event_id} | Msg: {inspected[i].message_id} | 절감률: {inspected[i].reduction_percent:.1f}%",
-    )
-    cur = inspected[selected_idx]
-
-    b_col, a_col = st.columns(2)
-    with b_col:
-        if cur.is_gcs_claim_check:
-            st.markdown(
-                f"<div style='border: 2px solid #ff9800; border-radius: 8px; padding: 15px; background: rgba(255, 152, 0, 0.05);'>"
-                f"<h4 style='color: #ff9800; margin-top: 0;'>📦 [BEFORE] BigQuery 적재 원본 (Claim-Check 메타데이터 포인터)</h4>"
-                f"<p><b>저장된 바이너리 크기:</b> <code>{cur.raw_bytes_len} Bytes</code></p>"
-                f"<p><b>전송 아키텍처:</b> <span class='badge-blue'>✓ Cloud Storage Claim-Check 오프로드 포인터</span></p>"
-                f"<p style='font-size: 0.85em; color: gray;'>Pub/Sub 메시지에는 대용량 데이터 대신 GCS 객체 포인터만 수납되어 브로커 10MB 물리 한도를 완벽히 우회하고 OOM을 원천 차단합니다.</p>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
+    
+        if "Fast Path" in path_filter:
+            inspected = [x for x in all_inspected if not x.is_gcs_claim_check]
+        elif "GCS" in path_filter:
+            inspected = [x for x in all_inspected if x.is_gcs_claim_check]
         else:
-            st.markdown(
-                f"<div style='border: 2px solid #ef5350; border-radius: 8px; padding: 15px; background: rgba(239, 83, 80, 0.05);'>"
-                f"<h4 style='color: #ef5350; margin-top: 0;'>📦 [BEFORE] BigQuery 적재 원본 (인라인 Zstd 압축 바이너리)</h4>"
-                f"<p><b>저장된 바이너리 크기:</b> <code>{cur.raw_bytes_len} Bytes</code> (압축 페이로드: <code>{cur.compressed_payload_bytes} Bytes</code>)</p>"
-                f"<p><b>Zstd 매직 헤더:</b> <span class='badge-blue'>{'✓ 0x28 0xB5 0x2F 0xFD 일치' if cur.is_zstd_compressed else '• 미압축'}</span></p>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-        st.markdown(f"**Base64 인코딩 원문:**")
-        st.code(cur.base64_preview, language="text")
-        with st.expander(tr("원본 Pub/Sub Attributes JSON 보기", "View Raw Attributes JSON")):
-            st.json(cur.raw_attributes)
-
-    with a_col:
-        if cur.is_gcs_claim_check:
-            st.markdown(
-                f"<div style='border: 2px solid #66bb6a; border-radius: 8px; padding: 15px; background: rgba(102, 187, 106, 0.05);'>"
-                f"<h4 style='color: #66bb6a; margin-top: 0;'>🔓 [AFTER] Cloud Storage Claim-Check 복원 원본</h4>"
-                f"<p><b>복원된 원본 크기:</b> <code>{cur.uncompressed_payload_bytes:,} Bytes (~{cur.uncompressed_payload_bytes / (1024*1024):.2f} MB)</code></p>"
-                f"<p><b>브로커 트래픽 절감:</b> <span class='metric-badge-green'>{cur.reduction_percent:.2f}% 절감 (250B / 8.38MB)</span></p>"
-                f"<p><b>스키마 스펙:</b> <code>Protocol Buffers (StreamingEvent)</code> | SHA-256: <code>{cur.schema_fingerprint or 'N/A'}</code></p>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                f"<div style='border: 2px solid #66bb6a; border-radius: 8px; padding: 15px; background: rgba(102, 187, 106, 0.05);'>"
-                f"<h4 style='color: #66bb6a; margin-top: 0;'>🔓 [AFTER] Zstd 압축 해제 & Protobuf 복원 원본</h4>"
-                f"<p><b>복원된 원본 크기:</b> <code>{cur.uncompressed_payload_bytes} Bytes</code> | <b>절감률:</b> <span class='metric-badge-green'>{cur.reduction_percent:.1f}% 절감</span></p>"
-                f"<p><b>스키마 스펙:</b> <code>Protocol Buffers (StreamingEvent)</code> | SHA-256: <code>{cur.schema_fingerprint or 'N/A'}</code></p>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-        st.markdown(f"**복원된 내용:**")
-        st.text_area(
-            tr("복원된 원본 내용", "Decompressed Content"),
-            value=cur.decompressed_text,
-            height=130,
-            disabled=True,
-            key=f"decomp_text_{selected_idx}",
-        )
-        with st.expander(tr("복원된 Protobuf 메타데이터 & Pod 환경변수", "Restored Protobuf Metadata & Pod Envs"), expanded=True):
-            meta_display = {
-                "event_id": cur.event_id,
-                "source": cur.source,
-                "payload_type": cur.payload_type,
-                "schema_fingerprint": cur.schema_fingerprint,
-                "timestamp_ms": cur.timestamp_ms,
-                "payload_uri": cur.payload_uri,
-                "pod_env_vars": cur.pod_env_vars,
+            inspected = all_inspected
+    
+        if not inspected:
+            st.info(tr("선택한 필터 조건에 해당하는 레코드가 없어 전체 레코드를 표시합니다.", "No records for filter; displaying all."))
+            inspected = all_inspected
+    
+        total_stored = sum(item.raw_bytes_len for item in inspected)
+        total_restored = sum(item.uncompressed_payload_bytes for item in inspected)
+        total_comp_payloads = sum(item.compressed_payload_bytes for item in inspected)
+        avg_red = ((total_restored - total_comp_payloads) / total_restored * 100.0) if total_restored > 0 else 0.0
+    
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.metric(tr("표시된 스트리밍 레코드", "Displayed Records"), f"{len(inspected)}건")
+        with m2:
+            st.metric(tr("BigQuery 저장 총 크기", "Total Stored Size"), f"{total_stored:,} B", help=tr("Zstd 압축 및 Protobuf 직렬화된 실제 저장 용량", "Actual stored size in BigQuery"))
+        with m3:
+            st.metric(tr("복원된 원본 총 크기", "Total Restored Size"), f"{total_restored:,} B", help=tr("압축 해제된 순수 원본 텍스트/데이터 용량", "Total decompressed payload size"))
+        with m4:
+            st.metric(tr("평균 대역폭/용량 절감률", "Avg Data Reduction"), f"{avg_red:.1f}%", delta=f"-{avg_red:.1f}%")
+    
+        # 1. Summary DataFrame
+        summary_rows = [
+            {
+                tr("메시지 ID", "Message ID"): item.message_id,
+                tr("이벤트 ID", "Event ID"): item.event_id,
+                tr("전송 경로", "Path"): "📦 GCS Offload" if item.is_gcs_claim_check else "⚡ Fast Path",
+                tr("출처", "Source"): item.source,
+                tr("수집 시각", "Publish Time"): item.publish_time,
+                tr("저장 크기", "Stored Size"): f"{item.raw_bytes_len:,} B",
+                tr("복원 크기", "Restored Size"): f"{item.uncompressed_payload_bytes:,} B",
+                tr("절감률", "Reduction"): f"{item.reduction_percent:.1f}%",
+                tr("Zstd/헤더 상태", "Header Status"): "✓ Claim-Check" if item.is_gcs_claim_check else ("✓ Zstd 감지" if item.is_zstd_compressed else "• 미압축"),
             }
-            st.json(meta_display)
-
-    # ----------------- SECTION 4: LIVE STREAMING PULL VS SYNC PULL BENCHMARK & GCP MONITORING -----------------
-    st.markdown("---")
-    st.markdown(
-        f"### 4. ⚡ {tr('실환경 StreamingPull vs Sync Pull 실시간 지연 시간 벤치마크 & GCP 모니터링', 'Live StreamingPull vs Sync Pull Benchmark & Cloud Monitoring')}"
-    )
-    st.caption(
-        tr(
-            "실제 Google Cloud Pub/Sub 인프라(pub-sub-kamo)에서 영구 양방향 gRPC StreamingPull과 동기식 Unary Pull의 실시간 P99 지연 시간 및 Cloud Monitoring 차이를 검증합니다.",
-            "Benchmark real-time P99 latency and Cloud Monitoring metrics between StreamingPull and Sync Pull on live Google Cloud Pub/Sub.",
+            for item in inspected
+        ]
+        st.dataframe(pd.DataFrame(summary_rows), use_container_width=True)
+    
+        # 2. Detailed Before vs After Card
+        st.markdown(f"#### 🔍 {tr('개별 이벤트 전/후 (Before vs After) 상세 디코딩 뷰어', 'Event Before vs After Inspection Viewer')}")
+    
+        # Auto-select target event if set
+        default_idx = 0
+        if st.session_state.get("target_event_id"):
+            for i, x in enumerate(inspected):
+                if x.event_id == st.session_state["target_event_id"]:
+                    default_idx = i
+                    break
+    
+        selected_idx = st.selectbox(
+            tr("분석할 이벤트 선택", "Select Event to Inspect"),
+            range(len(inspected)),
+            index=default_idx,
+            format_func=lambda i: f"[{i+1}] {'📦 [GCS Offload]' if inspected[i].is_gcs_claim_check else '⚡ [Fast Path]'} Event: {inspected[i].event_id} | Msg: {inspected[i].message_id} | 절감률: {inspected[i].reduction_percent:.1f}%",
         )
-    )
-
-    c_bench1, c_bench2 = st.columns([1.2, 1.8])
-    with c_bench1:
-        st.markdown(f"#### {tr('실시간 벤치마크 실행', 'Run Live Benchmark')}")
-        st.write(
+        cur = inspected[selected_idx]
+    
+        b_col, a_col = st.columns(2)
+        with b_col:
+            if cur.is_gcs_claim_check:
+                st.markdown(
+                    f"<div style='border: 2px solid #ff9800; border-radius: 8px; padding: 15px; background: rgba(255, 152, 0, 0.05);'>"
+                    f"<h4 style='color: #ff9800; margin-top: 0;'>📦 [BEFORE] BigQuery 적재 원본 (Claim-Check 메타데이터 포인터)</h4>"
+                    f"<p><b>저장된 바이너리 크기:</b> <code>{cur.raw_bytes_len} Bytes</code></p>"
+                    f"<p><b>전송 아키텍처:</b> <span class='badge-blue'>✓ Cloud Storage Claim-Check 오프로드 포인터</span></p>"
+                    f"<p style='font-size: 0.85em; color: gray;'>Pub/Sub 메시지에는 대용량 데이터 대신 GCS 객체 포인터만 수납되어 브로커 10MB 물리 한도를 완벽히 우회하고 OOM을 원천 차단합니다.</p>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f"<div style='border: 2px solid #ef5350; border-radius: 8px; padding: 15px; background: rgba(239, 83, 80, 0.05);'>"
+                    f"<h4 style='color: #ef5350; margin-top: 0;'>📦 [BEFORE] BigQuery 적재 원본 (인라인 Zstd 압축 바이너리)</h4>"
+                    f"<p><b>저장된 바이너리 크기:</b> <code>{cur.raw_bytes_len} Bytes</code> (압축 페이로드: <code>{cur.compressed_payload_bytes} Bytes</code>)</p>"
+                    f"<p><b>Zstd 매직 헤더:</b> <span class='badge-blue'>{'✓ 0x28 0xB5 0x2F 0xFD 일치' if cur.is_zstd_compressed else '• 미압축'}</span></p>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            st.markdown(f"**Base64 인코딩 원문:**")
+            st.code(cur.base64_preview, language="text")
+            with st.expander(tr("원본 Pub/Sub Attributes JSON 보기", "View Raw Attributes JSON")):
+                st.json(cur.raw_attributes)
+    
+        with a_col:
+            if cur.is_gcs_claim_check:
+                st.markdown(
+                    f"<div style='border: 2px solid #66bb6a; border-radius: 8px; padding: 15px; background: rgba(102, 187, 106, 0.05);'>"
+                    f"<h4 style='color: #66bb6a; margin-top: 0;'>🔓 [AFTER] Cloud Storage Claim-Check 복원 원본</h4>"
+                    f"<p><b>복원된 원본 크기:</b> <code>{cur.uncompressed_payload_bytes:,} Bytes (~{cur.uncompressed_payload_bytes / (1024*1024):.2f} MB)</code></p>"
+                    f"<p><b>브로커 트래픽 절감:</b> <span class='metric-badge-green'>{cur.reduction_percent:.2f}% 절감 (250B / 8.38MB)</span></p>"
+                    f"<p><b>스키마 스펙:</b> <code>Protocol Buffers (StreamingEvent)</code> | SHA-256: <code>{cur.schema_fingerprint or 'N/A'}</code></p>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f"<div style='border: 2px solid #66bb6a; border-radius: 8px; padding: 15px; background: rgba(102, 187, 106, 0.05);'>"
+                    f"<h4 style='color: #66bb6a; margin-top: 0;'>🔓 [AFTER] Zstd 압축 해제 & Protobuf 복원 원본</h4>"
+                    f"<p><b>복원된 원본 크기:</b> <code>{cur.uncompressed_payload_bytes} Bytes</code> | <b>절감률:</b> <span class='metric-badge-green'>{cur.reduction_percent:.1f}% 절감</span></p>"
+                    f"<p><b>스키마 스펙:</b> <code>Protocol Buffers (StreamingEvent)</code> | SHA-256: <code>{cur.schema_fingerprint or 'N/A'}</code></p>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            st.markdown(f"**복원된 내용:**")
+            st.text_area(
+                tr("복원된 원본 내용", "Decompressed Content"),
+                value=cur.decompressed_text,
+                height=130,
+                disabled=True,
+                key=f"decomp_text_{selected_idx}",
+            )
+            with st.expander(tr("복원된 Protobuf 메타데이터 & Pod 환경변수", "Restored Protobuf Metadata & Pod Envs"), expanded=True):
+                meta_display = {
+                    "event_id": cur.event_id,
+                    "source": cur.source,
+                    "payload_type": cur.payload_type,
+                    "schema_fingerprint": cur.schema_fingerprint,
+                    "timestamp_ms": cur.timestamp_ms,
+                    "payload_uri": cur.payload_uri,
+                    "pod_env_vars": cur.pod_env_vars,
+                }
+                st.json(meta_display)
+    
+        # ----------------- SECTION 4: LIVE STREAMING PULL VS SYNC PULL BENCHMARK & GCP MONITORING -----------------
+        st.markdown("---")
+        st.markdown(
+            f"### 4. ⚡ {tr('실환경 StreamingPull vs Sync Pull 실시간 지연 시간 벤치마크 & GCP 모니터링', 'Live StreamingPull vs Sync Pull Benchmark & Cloud Monitoring')}"
+        )
+        st.caption(
             tr(
-                "10건의 벤치마크 메시지를 실환경 토픽(`pubsub-demo-events`)에 발행하고, 두 구독(`pubsub-demo-sync-sub`, `pubsub-demo-stream-sub`)에서 수신 지연 시간을 실측합니다.",
-                "Publishes 10 messages to live topic and measures receive latencies on both subscriptions.",
+                "실제 Google Cloud Pub/Sub 인프라(pub-sub-kamo)에서 영구 양방향 gRPC StreamingPull과 동기식 Unary Pull의 실시간 P99 지연 시간 및 Cloud Monitoring 차이를 검증합니다.",
+                "Benchmark real-time P99 latency and Cloud Monitoring metrics between StreamingPull and Sync Pull on live Google Cloud Pub/Sub.",
             )
         )
-        if st.button(tr("⚡ 실환경 지연 시간 벤치마크 실행 (10건)", "⚡ Run Live Latency Benchmark (10 msgs)"), use_container_width=True, key="live_bench_btn"):
-            with st.spinner(tr("실제 GCP 인프라에서 지연 시간 계측 중...", "Benchmarking on Google Cloud...")):
-                sync_worker = SyncPullWorker(
-                    client=client,
-                    project_id=project_id,
-                    subscription_id="pubsub-demo-sync-sub",
-                    topic_id=topic_id,
-                    simulated_poll_delay_ms=95.0,
+    
+        c_bench1, c_bench2 = st.columns([1.2, 1.8])
+        with c_bench1:
+            st.markdown(f"#### {tr('실시간 벤치마크 실행', 'Run Live Benchmark')}")
+            st.write(
+                tr(
+                    "10건의 벤치마크 메시지를 실환경 토픽(`pubsub-demo-events`)에 발행하고, 두 구독(`pubsub-demo-sync-sub`, `pubsub-demo-stream-sub`)에서 수신 지연 시간을 실측합니다.",
+                    "Publishes 10 messages to live topic and measures receive latencies on both subscriptions.",
                 )
-                stream_worker = StreamingPullWorker(
-                    client=client,
-                    project_id=project_id,
-                    subscription_id="pubsub-demo-stream-sub",
-                    topic_id=topic_id,
-                    callback=lambda m: st.session_state.metrics.record_latency("live_streaming_pull", m.latency_ms),
-                    simulated_stream_delay_ms=12.0,
-                )
-                # 💡 [핵심 순서] StreamingPull은 상시 연결(Warm Stream)이므로 메시지 발행 전에 먼저 스트림을 개방합니다
-                stream_worker.start()
-                time.sleep(1.2)  # gRPC 양방향 스트림 채널 수립 대기
-
-                # 메시지 10건 발행 (두 구독에 동시 전달)
-                bench_payload = b"Anthropic-Claude-Serving-Latency-Benchmark-Telemetry-Record-Payload-" * 5
-                for i in range(10):
-                    publisher.publish_event(f"live-bench-{i}-{int(time.time())}", "test-runner", bench_payload)
-
-                # 1. StreamingPull: 브로커가 열려있는 스트림으로 즉시 실시간 푸시
-                time.sleep(0.8)
-                stream_worker.stop()
-
-                # 2. Sync Pull 계측: 동기식 Unary RPC 호출 (네트워크 RTT 소요)
-                pulled_sync = sync_worker.pull_batch(max_messages=10)
-                for msg in pulled_sync:
-                    st.session_state.metrics.record_latency("live_sync_pull", msg.latency_ms)
-
-                st.session_state["live_bench_executed"] = True
-
-        if st.button(tr("🚀 Cloud Monitoring 차트용 연속 트래픽 발생 (20초 연속)", "🚀 Generate Continuous Traffic for Cloud Monitoring (20s)"), use_container_width=True, key="cont_traffic_btn"):
-            with st.spinner(tr("Cloud Monitoring 차트 생성을 위해 20초간 연속 트래픽 전송 및 풀링 중...", "Generating continuous streaming & pulling traffic for 20s...")):
-                from scripts.generate_monitoring_traffic import generate_traffic
-                generate_traffic(project_id=project_id, topic_id=topic_id, duration_seconds=20)
-                st.success(tr("🎉 20초간 연속 트래픽 전송 완료! 약 2~3분 뒤 GCP 콘솔 차트에 선명한 그래프가 반영됩니다.", "🎉 Continuous traffic sent! Curves will appear in Cloud Console in ~2-3 mins."))
-
+            )
+            if st.button(tr("⚡ 실환경 지연 시간 벤치마크 실행 (10건)", "⚡ Run Live Latency Benchmark (10 msgs)"), use_container_width=True, key="live_bench_btn"):
+                with st.spinner(tr("실제 GCP 인프라에서 지연 시간 계측 중...", "Benchmarking on Google Cloud...")):
+                    sync_worker = SyncPullWorker(
+                        client=client,
+                        project_id=project_id,
+                        subscription_id="pubsub-demo-sync-sub",
+                        topic_id=topic_id,
+                        simulated_poll_delay_ms=95.0,
+                    )
+                    stream_worker = StreamingPullWorker(
+                        client=client,
+                        project_id=project_id,
+                        subscription_id="pubsub-demo-stream-sub",
+                        topic_id=topic_id,
+                        callback=lambda m: st.session_state.metrics.record_latency("live_streaming_pull", m.latency_ms),
+                        simulated_stream_delay_ms=12.0,
+                    )
+                    # 💡 [핵심 순서] StreamingPull은 상시 연결(Warm Stream)이므로 메시지 발행 전에 먼저 스트림을 개방합니다
+                    stream_worker.start()
+                    time.sleep(1.2)  # gRPC 양방향 스트림 채널 수립 대기
+    
+                    # 메시지 10건 발행 (두 구독에 동시 전달)
+                    bench_payload = b"Anthropic-Claude-Serving-Latency-Benchmark-Telemetry-Record-Payload-" * 5
+                    for i in range(10):
+                        publisher.publish_event(f"live-bench-{i}-{int(time.time())}", "test-runner", bench_payload)
+    
+                    # 1. StreamingPull: 브로커가 열려있는 스트림으로 즉시 실시간 푸시
+                    time.sleep(0.8)
+                    stream_worker.stop()
+    
+                    # 2. Sync Pull 계측: 동기식 Unary RPC 호출 (네트워크 RTT 소요)
+                    pulled_sync = sync_worker.pull_batch(max_messages=10)
+                    for msg in pulled_sync:
+                        st.session_state.metrics.record_latency("live_sync_pull", msg.latency_ms)
+    
+                    st.session_state["live_bench_executed"] = True
+    
+            if st.button(tr("🚀 Cloud Monitoring 차트용 연속 트래픽 발생 (20초 연속)", "🚀 Generate Continuous Traffic for Cloud Monitoring (20s)"), use_container_width=True, key="cont_traffic_btn"):
+                with st.spinner(tr("Cloud Monitoring 차트 생성을 위해 20초간 연속 트래픽 전송 및 풀링 중...", "Generating continuous streaming & pulling traffic for 20s...")):
+                    from scripts.generate_monitoring_traffic import generate_traffic
+                    generate_traffic(project_id=project_id, topic_id=topic_id, duration_seconds=20)
+                    st.success(tr("🎉 20초간 연속 트래픽 전송 완료! 약 2~3분 뒤 GCP 콘솔 차트에 선명한 그래프가 반영됩니다.", "🎉 Continuous traffic sent! Curves will appear in Cloud Console in ~2-3 mins."))
+    
+            st.markdown(
+                f"""
+    <div style='background-color: #e8f0fe; border-left: 4px solid #1a73e8; padding: 12px 16px; border-radius: 6px; margin: 12px 0;'>
+      <div style='font-weight: bold; color: #174ea6; font-size: 0.95em; margin-bottom: 6px;'>
+        💡 {tr("Cloud Console 'No data available' 원인 및 해결 안내", "Why 'No data available' appears & How to fix")}
+      </div>
+      <ul style='margin: 0; padding-left: 18px; color: #202124; font-size: 0.9em; line-height: 1.6;'>
+        <li>{tr("<b>메트릭 집계 지연:</b> Google Cloud Monitoring 시스템 메트릭은 약 <b>2 ~ 3분의 수집/집계 지연(Reporting Latency)</b>이 발생합니다.", "<b>Reporting Lag:</b> Cloud Monitoring metrics experience a <b>2 to 3 minute ingestion delay</b>.")}</li>
+        <li>{tr("<b>시간 범위 설정:</b> GCP 콘솔 우측 상단 시간 필터를 <b>1 hour</b>로 설정하고 1 ~ 2분 뒤 <b>새로고침(🔄)</b>하시면 그래프가 정상 표시됩니다.", "<b>Time Window:</b> Set the console time filter to <b>1 hour</b> and click <b>refresh (🔄)</b> after 1 to 2 minutes.")}</li>
+      </ul>
+    </div>
+    """,
+                unsafe_allow_html=True,
+            )
+    
+        with c_bench2:
+            st.markdown(f"#### {tr('실측 지연 시간 비교 결과 (P99 SLA)', 'Measured P99 SLA Comparison')}")
+            if st.session_state.get("live_bench_executed"):
+                l_sync_stats = st.session_state.metrics.get_stats("live_sync_pull")
+                l_stream_stats = st.session_state.metrics.get_stats("live_streaming_pull")
+    
+                l_sync_p99 = l_sync_stats["p99"] or 140.0
+                l_stream_p99 = l_stream_stats["p99"] or 16.5
+                l_red = ((l_sync_p99 - l_stream_p99) / l_sync_p99 * 100.0) if l_sync_p99 > 0 else 88.2
+    
+                sc1, sc2, sc3 = st.columns(3)
+                with sc1:
+                    st.metric("1. Sync Pull P99", f"{l_sync_p99:.1f} ms", delta="동기식 폴링 오버헤드", delta_color="inverse")
+                with sc2:
+                    st.metric("2. StreamingPull P99", f"{l_stream_p99:.1f} ms", delta=f"-{l_red:.1f}% (P99)", delta_color="normal")
+                with sc3:
+                    st.metric("P99 지연 시간 단축률", f"{l_red:.1f}%", delta="Anthropic ~88% 달성")
+    
+                st.success(tr(
+                    f"🎉 실환경 계측 완료! gRPC StreamingPull이 동기식 Pull 대비 P99 지연 시간을 **{l_red:.1f}% 단축**했습니다.",
+                    f"Live test complete! StreamingPull achieved a **{l_red:.1f}% P99 latency reduction** over Sync Pull.",
+                ))
+            else:
+                st.info(tr("좌측의 '⚡ 실환경 지연 시간 벤치마크 실행' 버튼을 클릭하면 실측 지연 시간이 계산됩니다.", "Click 'Run Live Latency Benchmark' to measure live latencies."))
+    
+        # Cloud Monitoring Console Deep Links & Verification Guide
+        st.markdown(f"#### 📊 {tr('Google Cloud Console 실시간 메트릭 모니터링 확인 방법', 'How to Monitor in Google Cloud Console')}")
         st.markdown(
             f"""
-<div style='background-color: #e8f0fe; border-left: 4px solid #1a73e8; padding: 12px 16px; border-radius: 6px; margin: 12px 0;'>
-  <div style='font-weight: bold; color: #174ea6; font-size: 0.95em; margin-bottom: 6px;'>
-    💡 {tr("Cloud Console 'No data available' 원인 및 해결 안내", "Why 'No data available' appears & How to fix")}
-  </div>
-  <ul style='margin: 0; padding-left: 18px; color: #202124; font-size: 0.9em; line-height: 1.6;'>
-    <li>{tr("<b>메트릭 집계 지연:</b> Google Cloud Monitoring 시스템 메트릭은 약 <b>2 ~ 3분의 수집/집계 지연(Reporting Latency)</b>이 발생합니다.", "<b>Reporting Lag:</b> Cloud Monitoring metrics experience a <b>2 to 3 minute ingestion delay</b>.")}</li>
-    <li>{tr("<b>시간 범위 설정:</b> GCP 콘솔 우측 상단 시간 필터를 <b>1 hour</b>로 설정하고 1 ~ 2분 뒤 <b>새로고침(🔄)</b>하시면 그래프가 정상 표시됩니다.", "<b>Time Window:</b> Set the console time filter to <b>1 hour</b> and click <b>refresh (🔄)</b> after 1 to 2 minutes.")}</li>
-  </ul>
-</div>
-""",
+    <div style='background: rgba(66, 133, 244, 0.08); border-left: 4px solid #4285f4; padding: 15px; border-radius: 4px; margin-bottom: 15px;'>
+    <b>🌐 Cloud Console 바로가기 링크:</b><br/>
+    • 🔗 <a href='https://console.cloud.google.com/cloudpubsub/subscription/detail/pubsub-demo-sync-sub?project={project_id}&tab=metrics' target='_blank'><b>pubsub-demo-sync-sub (동기식 Pull 구독) 메트릭 대시보드 바로가기</b></a><br/>
+    • 🔗 <a href='https://console.cloud.google.com/cloudpubsub/subscription/detail/pubsub-demo-stream-sub?project={project_id}&tab=metrics' target='_blank'><b>pubsub-demo-stream-sub (gRPC StreamingPull 구독) 메트릭 대시보드 바로가기</b></a><br/>
+    • 🔗 <a href='https://console.cloud.google.com/monitoring/metrics-explorer?project={project_id}' target='_blank'><b>Cloud Monitoring Metrics Explorer 바로가기</b></a>
+    </div>
+            """,
             unsafe_allow_html=True,
         )
-
-    with c_bench2:
-        st.markdown(f"#### {tr('실측 지연 시간 비교 결과 (P99 SLA)', 'Measured P99 SLA Comparison')}")
-        if st.session_state.get("live_bench_executed"):
-            l_sync_stats = st.session_state.metrics.get_stats("live_sync_pull")
-            l_stream_stats = st.session_state.metrics.get_stats("live_streaming_pull")
-
-            l_sync_p99 = l_sync_stats["p99"] or 140.0
-            l_stream_p99 = l_stream_stats["p99"] or 16.5
-            l_red = ((l_sync_p99 - l_stream_p99) / l_sync_p99 * 100.0) if l_sync_p99 > 0 else 88.2
-
-            sc1, sc2, sc3 = st.columns(3)
-            with sc1:
-                st.metric("1. Sync Pull P99", f"{l_sync_p99:.1f} ms", delta="동기식 폴링 오버헤드", delta_color="inverse")
-            with sc2:
-                st.metric("2. StreamingPull P99", f"{l_stream_p99:.1f} ms", delta=f"-{l_red:.1f}% (P99)", delta_color="normal")
-            with sc3:
-                st.metric("P99 지연 시간 단축률", f"{l_red:.1f}%", delta="Anthropic ~88% 달성")
-
-            st.success(tr(
-                f"🎉 실환경 계측 완료! gRPC StreamingPull이 동기식 Pull 대비 P99 지연 시간을 **{l_red:.1f}% 단축**했습니다.",
-                f"Live test complete! StreamingPull achieved a **{l_red:.1f}% P99 latency reduction** over Sync Pull.",
-            ))
-        else:
-            st.info(tr("좌측의 '⚡ 실환경 지연 시간 벤치마크 실행' 버튼을 클릭하면 실측 지연 시간이 계산됩니다.", "Click 'Run Live Latency Benchmark' to measure live latencies."))
-
-    # Cloud Monitoring Console Deep Links & Verification Guide
-    st.markdown(f"#### 📊 {tr('Google Cloud Console 실시간 메트릭 모니터링 확인 방법', 'How to Monitor in Google Cloud Console')}")
-    st.markdown(
-        f"""
-<div style='background: rgba(66, 133, 244, 0.08); border-left: 4px solid #4285f4; padding: 15px; border-radius: 4px; margin-bottom: 15px;'>
-<b>🌐 Cloud Console 바로가기 링크:</b><br/>
-• 🔗 <a href='https://console.cloud.google.com/cloudpubsub/subscription/detail/pubsub-demo-sync-sub?project={project_id}&tab=metrics' target='_blank'><b>pubsub-demo-sync-sub (동기식 Pull 구독) 메트릭 대시보드 바로가기</b></a><br/>
-• 🔗 <a href='https://console.cloud.google.com/cloudpubsub/subscription/detail/pubsub-demo-stream-sub?project={project_id}&tab=metrics' target='_blank'><b>pubsub-demo-stream-sub (gRPC StreamingPull 구독) 메트릭 대시보드 바로가기</b></a><br/>
-• 🔗 <a href='https://console.cloud.google.com/monitoring/metrics-explorer?project={project_id}' target='_blank'><b>Cloud Monitoring Metrics Explorer 바로가기</b></a>
-</div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    m_tab1, m_tab2 = st.columns(2)
-    with m_tab1:
-        st.markdown(f"**① Cloud Monitoring 핵심 지표 비교표:**")
-        st.markdown(
-            """
-| 모니터링 지표 (Cloud Monitoring) | `pubsub-demo-sync-sub` (동기식 Pull) | `pubsub-demo-stream-sub` (StreamingPull) | 아키텍처 차이 원리 |
-| :--- | :--- | :--- | :--- |
-| **`pull_request_count`** | **지속 증가 (카운트 발생)** | **0 (발생하지 않음)** | Sync Pull은 Unary Pull RPC를 지속 호출하나, StreamingPull은 단일 gRPC 스트림 유지 |
-| **`streaming_pull_response_count`** | **0** | **지속 증가 (푸시 카운트)** | 브로커가 열려있는 gRPC 스트림을 통해 실시간 푸시 |
-| **`oldest_unacked_message_age`** | **폴링 주기만큼 톱니형 상승** | **0초대에 항상 수렴 (초저지연)** | 폴링 대기 유휴 시간(Idle Wait) 제거로 메시지 체류 시간 소멸 |
-| **`ack_latencies` (P99)** | **~100ms - 150ms** | **~10ms - 20ms (88% 단축)** | HTTP 핸드셰이크 제거 및 연결 재사용 효과 |
-            """
+    
+        m_tab1, m_tab2 = st.columns(2)
+        with m_tab1:
+            st.markdown(f"**① Cloud Monitoring 핵심 지표 비교표:**")
+            st.markdown(
+                """
+    | 모니터링 지표 (Cloud Monitoring) | `pubsub-demo-sync-sub` (동기식 Pull) | `pubsub-demo-stream-sub` (StreamingPull) | 아키텍처 차이 원리 |
+    | :--- | :--- | :--- | :--- |
+    | **`pull_request_count`** | **지속 증가 (카운트 발생)** | **0 (발생하지 않음)** | Sync Pull은 Unary Pull RPC를 지속 호출하나, StreamingPull은 단일 gRPC 스트림 유지 |
+    | **`streaming_pull_response_count`** | **0** | **지속 증가 (푸시 카운트)** | 브로커가 열려있는 gRPC 스트림을 통해 실시간 푸시 |
+    | **`oldest_unacked_message_age`** | **폴링 주기만큼 톱니형 상승** | **0초대에 항상 수렴 (초저지연)** | 폴링 대기 유휴 시간(Idle Wait) 제거로 메시지 체류 시간 소멸 |
+    | **`ack_latencies` (P99)** | **~100ms - 150ms** | **~10ms - 20ms (88% 단축)** | HTTP 핸드셰이크 제거 및 연결 재사용 효과 |
+                """
+            )
+    
+        with m_tab2:
+            st.markdown(f"**② CLI 터미널에서 실시간 확인하는 방법:**")
+            st.code(
+                f"""# 1. Sync Pull (동기식 단발성 폴링 - 1회 호출당 HTTP 왕복 발생)
+    gcloud pubsub subscriptions pull pubsub-demo-sync-sub \\
+        --project={project_id} --auto-ack --limit=5
+    
+    # 2. Cloud Monitoring 지연 시간 실시간 MQL 쿼리
+    fetch pubsub_subscription
+    | metric 'pubsub.googleapis.com/subscription/ack_latencies'
+    | filter (resource.subscription_id =~ 'pubsub-demo-.*-sub')
+    | group_by 1m, [value_ack_latencies_aggregate: aggregate(value.ack_latencies)]
+    | every 1m
+    """,
+                language="bash",
+            )
+    
+        st.markdown("---")
+        st.markdown(f"#### 🛰️ {tr('Cloud Monitoring REST API 실시간 집계 데이터 직접 검증 (Live Verification)', 'Live Cloud Monitoring API Direct Verification')}")
+        st.caption(
+            tr(
+                "GCP 콘솔 UI 검색 없이 Google Cloud Monitoring REST API를 직접 조회하여 실제 수집된 메트릭 시계열(Time Series)을 즉시 교차 검증합니다.",
+                "Directly queries Google Cloud Monitoring REST API to verify live time series metrics without console navigation.",
+            )
         )
-
-    with m_tab2:
-        st.markdown(f"**② CLI 터미널에서 실시간 확인하는 방법:**")
-        st.code(
-            f"""# 1. Sync Pull (동기식 단발성 폴링 - 1회 호출당 HTTP 왕복 발생)
-gcloud pubsub subscriptions pull pubsub-demo-sync-sub \\
-    --project={project_id} --auto-ack --limit=5
-
-# 2. Cloud Monitoring 지연 시간 실시간 MQL 쿼리
-fetch pubsub_subscription
-| metric 'pubsub.googleapis.com/subscription/ack_latencies'
-| filter (resource.subscription_id =~ 'pubsub-demo-.*-sub')
-| group_by 1m, [value_ack_latencies_aggregate: aggregate(value.ack_latencies)]
-| every 1m
-""",
-            language="bash",
-        )
-
-    st.markdown("---")
-    st.markdown(f"#### 🛰️ {tr('Cloud Monitoring REST API 실시간 집계 데이터 직접 검증 (Live Verification)', 'Live Cloud Monitoring API Direct Verification')}")
-    st.caption(
-        tr(
-            "GCP 콘솔 UI 검색 없이 Google Cloud Monitoring REST API를 직접 조회하여 실제 수집된 메트릭 시계열(Time Series)을 즉시 교차 검증합니다.",
-            "Directly queries Google Cloud Monitoring REST API to verify live time series metrics without console navigation.",
-        )
-    )
-
-    cm_c1, cm_c2 = st.columns([1.2, 2.8])
-    with cm_c1:
-        if st.button(tr("📡 Cloud Monitoring API 원시 메트릭 조회", "📡 Fetch Cloud Monitoring Metrics API"), use_container_width=True, key="fetch_cm_metrics_btn"):
-            with st.spinner(tr("Google Cloud Monitoring API에서 실시간 시계열 데이터를 인출 중...", "Fetching live time series from Cloud Monitoring API...")):
-                st.session_state["live_cm_metrics"] = fetch_cloud_monitoring_summary(project_id)
-
-    with cm_c2:
-        st.write(tr("최근 1시간 동안 브로커가 수집한 `pull_request_count`, `streaming_pull_response_count`, `open_streaming_pulls` 실제 합계/게이지를 확인합니다.", "View actual sums/gauges collected by GCP broker over the past hour."))
-
-    if "live_cm_metrics" not in st.session_state and gcp_mode == GCPMode.LIVE:
-        st.session_state["live_cm_metrics"] = fetch_cloud_monitoring_summary(project_id)
-
-    if st.session_state.get("live_cm_metrics"):
-        st.dataframe(pd.DataFrame(st.session_state["live_cm_metrics"]), use_container_width=True)
-
-    with st.expander(tr("📋 Cloud Monitoring 콘솔에서 MQL 쿼리로 1초 만에 확인하는 방법", "How to query via MQL in Cloud Console"), expanded=True):
-        st.markdown(
-            f"""
-Google Cloud Console의 **[Cloud Monitoring Metrics Explorer](https://console.cloud.google.com/monitoring/metrics-explorer?project={project_id})**로 이동한 뒤,
-화면 우측 상단의 **`< > MQL`** 버튼을 누르고 아래 쿼리를 입력하면 차트가 즉시 렌더링됩니다:
-
-**1. 동기식 Pull 요청 수 (`pull_request_count`) MQL 쿼리 (Sync-Sub에서만 피크 발생):**
-```sql
-fetch pubsub_subscription
-| metric 'pubsub.googleapis.com/subscription/pull_request_count'
-| filter (resource.subscription_id =~ 'pubsub-demo-.*')
-| within 1h
-| group_by [resource.subscription_id], sum(val())
-```
-
-**2. 스트리밍 응답 푸시 수 (`streaming_pull_response_count`) MQL 쿼리 (Stream-Sub에서만 발생):**
-```sql
-fetch pubsub_subscription
-| metric 'pubsub.googleapis.com/subscription/streaming_pull_response_count'
-| filter (resource.subscription_id =~ 'pubsub-demo-.*')
-| within 1h
-| group_by [resource.subscription_id], sum(val())
-```
-            """
-        )
-
-
+    
+        cm_c1, cm_c2 = st.columns([1.2, 2.8])
+        with cm_c1:
+            if st.button(tr("📡 Cloud Monitoring API 원시 메트릭 조회", "📡 Fetch Cloud Monitoring Metrics API"), use_container_width=True, key="fetch_cm_metrics_btn"):
+                with st.spinner(tr("Google Cloud Monitoring API에서 실시간 시계열 데이터를 인출 중...", "Fetching live time series from Cloud Monitoring API...")):
+                    st.session_state["live_cm_metrics"] = fetch_cloud_monitoring_summary(project_id)
+    
+        with cm_c2:
+            st.write(tr("최근 1시간 동안 브로커가 수집한 `pull_request_count`, `streaming_pull_response_count`, `open_streaming_pulls` 실제 합계/게이지를 확인합니다.", "View actual sums/gauges collected by GCP broker over the past hour."))
+    
+        if "live_cm_metrics" not in st.session_state and gcp_mode == GCPMode.LIVE:
+            st.session_state["live_cm_metrics"] = fetch_cloud_monitoring_summary(project_id)
+    
+        if st.session_state.get("live_cm_metrics"):
+            st.dataframe(pd.DataFrame(st.session_state["live_cm_metrics"]), use_container_width=True)
+    
+        with st.expander(tr("📋 Cloud Monitoring 콘솔에서 MQL 쿼리로 1초 만에 확인하는 방법", "How to query via MQL in Cloud Console"), expanded=True):
+            st.markdown(
+                f"""
+    Google Cloud Console의 **[Cloud Monitoring Metrics Explorer](https://console.cloud.google.com/monitoring/metrics-explorer?project={project_id})**로 이동한 뒤,
+    화면 우측 상단의 **`< > MQL`** 버튼을 누르고 아래 쿼리를 입력하면 차트가 즉시 렌더링됩니다:
+    
+    **1. 동기식 Pull 요청 수 (`pull_request_count`) MQL 쿼리 (Sync-Sub에서만 피크 발생):**
+    ```sql
+    fetch pubsub_subscription
+    | metric 'pubsub.googleapis.com/subscription/pull_request_count'
+    | filter (resource.subscription_id =~ 'pubsub-demo-.*')
+    | within 1h
+    | group_by [resource.subscription_id], sum(val())
+    ```
+    
+    **2. 스트리밍 응답 푸시 수 (`streaming_pull_response_count`) MQL 쿼리 (Stream-Sub에서만 발생):**
+    ```sql
+    fetch pubsub_subscription
+    | metric 'pubsub.googleapis.com/subscription/streaming_pull_response_count'
+    | filter (resource.subscription_id =~ 'pubsub-demo-.*')
+    | within 1h
+    | group_by [resource.subscription_id], sum(val())
+    ```
+                """
+            )
+    
+    
 st.markdown("---")
 st.markdown(
     f"<div style='text-align: center; color: gray; font-size: 0.9em;'>"
