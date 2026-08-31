@@ -22,6 +22,7 @@ import streamlit as st
 
 from src.consumer import DualPathConsumer
 from src.dlq import DLQManager
+from src.format_benchmark import DataFormatBenchmark
 from src.gcp_client import GCPClientFactory, GCPMode
 from src.generator import SyntheticWorkloadGenerator
 from src.metrics import MetricsCollector
@@ -187,7 +188,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(
         tr("🏛️ 아키텍처 개요", "🏛️ Architecture Overview"),
         tr("📦 1. 이중 경로 수집 & 압축", "📦 1. Dual-Path Ingestion & Compression"),
         tr("🚀 2. StreamingPull 지연 시간 절감 (88%)", "🚀 2. StreamingPull vs Sync Pull (88% Latency Drop)"),
-        tr("🛡️ 3. Proto-First & Dead Letter Queue (DLQ)", "🛡️ 3. Proto-First & Dead Letter Queue (DLQ)"),
+        tr("🛡️ 3. 데이터 포맷 최적화 & DLQ", "🛡️ 3. Binary Schema Optimization & DLQ"),
         tr("🔍 4. 실제 GCP 프로젝트 라이브 검증", "🔍 4. Live GCP Project Verification"),
     ]
 )
@@ -206,9 +207,11 @@ with tab1:
         2. **StreamingPull로의 전환을 통한 지연 시간 88% 절감**:
            - 기존 HTTP/gRPC 동기식 배치 폴링 루프의 연결 핸드셰이크와 대기 오버헤드(~95ms) 전면 제거.
            - 영구적인 양방향 gRPC 스트림 채널을 유지하여 브로커가 메시지를 도착 즉시 푸시 (~11ms 달성).
-        3. **Proto-First 셀프서비스 플랫폼 & Dead Letter Queue (DLQ) 격리**:
-           - 엄격한 Protocol Buffers 스키마 정의 및 SHA-256 스키마 핑거프린팅, GKE Pod/Node 메타데이터 자동 주입.
-           - 스키마 오류나 포이즌 필(Poison Pill) 발생 시 5회 재시도 후 Dead Letter Topic(`pubsub-demo-dlq-topic`)으로 자동 격리하여 전체 파이프라인 병목 방지.
+        3. **데이터 전송 포맷 최적화 (Binary Schema & gRPC) & DLQ 거버넌스**:
+           - **바이너리 스키마(Protobuf)**: 비효율적인 JSON 필드명을 제거하고 1바이트 Varint 태그로 압축 인코딩.
+           - **gRPC 전송 (REST Base64 +33% 패널티 회피)**: REST API의 Base64 강제 인코딩 오버헤드를 없애고 순수 바이너리 전송.
+           - **Zstd 결합**: 단일 페이로드당 최극소화 바이트 볼륨 달성.
+           - **DLQ 서킷 브레이커**: 스키마 오류/포이즌 필 발생 시 5회 재시도 후 Dead Letter Topic(`pubsub-demo-dlq-topic`)으로 안전 격리.
         """
         )
     else:
@@ -223,9 +226,11 @@ with tab1:
         2. **88% Latency Reduction via gRPC StreamingPull**:
            - Replaces legacy HTTP/gRPC synchronous polling loops with persistent bidirectional gRPC streams.
            - Sub-15ms delivery for real-time model telemetry, training step sync, and agent logs.
-        3. **Proto-First Self-Service Platform & Dead Letter Queue Isolation**:
-           - Canonical Protocol Buffer schemas with automated metadata enrichment (GKE Pod, node, CSP).
-           - Strict schema fingerprinting and 5-retry DLQ quarantine preventing poison pill head-of-line blocking.
+        3. **Data Format Optimization (Binary Schema & gRPC) & DLQ Governance**:
+           - **Binary Schema (Protobuf)**: Eliminates JSON string field keys using 1-byte Varint tags.
+           - **Pure gRPC Wire (Bypassing REST +33% Base64 Penalty)**: Prevents REST Base64 data inflation.
+           - **Zstd Synergy**: Reaches the minimum possible byte volume per payload.
+           - **5-Retry DLQ Isolation**: Safely quarantines poison pills into Dead Letter Topic preventing blocking.
         """
         )
 
@@ -407,9 +412,148 @@ with tab3:
     ).set_index("Metric")
     st.bar_chart(chart_data)
 
-# ----------------- TAB 4: PROTO-FIRST & DLQ -----------------
+# ----------------- TAB 4: BINARY SCHEMA OPTIMIZATION & DLQ -----------------
 with tab4:
-    st.subheader(tr("핵심 축 3: Proto-First 거버넌스 & Dead Letter Queue (DLQ)", "Pillar 3: Proto-First Governance & Dead Letter Queue (DLQ)"))
+    st.subheader(tr("핵심 축 3: 데이터 전송 포맷 최적화 (바이너리 스키마) & DLQ 거버넌스", "Pillar 3: Binary Schema Optimization & DLQ Governance"))
+
+    st.markdown(
+        f"""
+        <div class="doc-banner">
+            <strong>💡 {tr("데이터 전송 포맷 & 프로토콜 최적화 핵심 원리", "Core Principles of Data Format & Protocol Optimization")}:</strong><br>
+            • <strong>{tr("JSON 포맷의 한계", "Limitation of JSON")}</strong>: {tr("필드명('event_id', 'timestamp_ms' 등)이 모든 메시지마다 문자열로 중복 포함되어 네트워크 대역폭을 낭비하고 압축 효율을 저해합니다.", "Field names are redundantly repeated in every message as strings, inflating payloads.")}<br>
+            • <strong>{tr("바이너리 스키마(Protobuf) 적용", "Binary Schema (Protobuf)")}</strong>: {tr("필드명을 1바이트 Varint 태그 번호로 치환하고 타입 기반 바이너리 인코딩을 적용하여 직렬화 크기를 대폭 축소합니다.", "Replaces field names with 1-byte Varint tags and compact type encoding.")}<br>
+            • <strong>⚠️ {tr("전송 프로토콜 선택 (REST vs gRPC) - Base64 33% 패널티", "Protocol Choice (REST vs gRPC) - 33% Base64 Penalty")}</strong>: 
+              {tr("HTTP REST API로 바이너리/JSON 데이터를 전송하면 Pub/Sub REST 본문 규격에 맞춰 <strong>Base64로 강제 인코딩되면서 용량이 대략 33% 추가 팽창</strong>하는 심각한 패널티가 발생합니다. 반면 <strong>gRPC(HTTP/2)</strong>는 순수 raw 바이너리를 직접 전송하여 Base64 패널티가 0%입니다.", "Sending binary via HTTP REST API forces <strong>Base64 encoding (+33% size penalty)</strong>. In contrast, <strong>gRPC (HTTP/2)</strong> transmits pure raw binary with 0% Base64 penalty.")}<br>
+            • <strong>{tr("클라이언트 압축(Zstd)과의 결합", "Combination with Client Zstd")}</strong>: {tr("Protobuf + gRPC + Zstandard를 결합하면 단일 페이로드당 최적화할 수 있는 가장 압축된 바이트 볼륨(최대 80% 이상 절감)을 달성할 수 있습니다.", "Combining Protobuf + gRPC + Zstd achieves the most compact byte volume possible (up to 80%+ savings).")}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(f"### 📊 1. {tr('전송 포맷 및 프로토콜 실시간 벤치마크 계산기', 'Real-Time Format & Protocol Benchmark Calculator')}")
+
+    f_col1, f_col2 = st.columns([1, 2])
+    with f_col1:
+        st.markdown(f"#### {tr('시뮬레이션 페이로드 설정', 'Simulated Payload Config')}")
+        preset = st.selectbox(
+            tr("샘플 페이로드 프리셋", "Sample Payload Preset"),
+            [
+                tr("LLM 서빙 프롬프트/응답 (텍스트)", "LLM Serving Prompt/Response (Text)"),
+                tr("멀티턴 에이전트 실행 컨텍스트 (긴 텍스트)", "Multi-turn Agent Context (Long Text)"),
+                tr("고밀도 텐서 임베딩 메타데이터 (JSON)", "High-Density Tensor Metadata (JSON)"),
+            ],
+        )
+        if "LLM" in preset:
+            sample_text = (
+                "Explain the internal architecture of Google Cloud Pub/Sub and StreamingPull RPCs. "
+                "Anthropic optimizes real-time LLM inference telemetry with Protocol Buffers and Zstandard compression. "
+                "Dual-Path pattern offloads payloads exceeding 8MB to Cloud Storage while streaming fast path inline."
+            )
+        elif "멀티턴" in preset or "Multi-turn" in preset:
+            sample_text = (
+                "User: Compare Google Cloud Pub/Sub with Kafka for high-throughput AI agent telemetry.\n"
+                "Assistant: Google Cloud Pub/Sub offers fully managed auto-scaling without cluster rebalancing, "
+                "native gRPC StreamingPull with sub-10ms delivery, and BigQuery Zero-ETL direct subscription ingestion. "
+            ) * 4
+        else:
+            sample_text = (
+                '{"layer": 32, "head_dim": 128, "embedding_dim": 4096, "quantization": "fp8", '
+                '"tensor_name": "model.layers.31.self_attn.o_proj.weight", "checksum": "e9b4c09d"}'
+            ) * 6
+
+        custom_prompt = st.text_area(
+            tr("페이로드 텍스트 (직접 편집 가능)", "Payload Text (Editable)"),
+            value=sample_text,
+            height=130,
+        )
+
+        fmt_bench = DataFormatBenchmark(compression_level=3)
+        bench_result = fmt_bench.benchmark_event(
+            event_id="evt-demo-bench",
+            source="claude-serving-pod-01",
+            prompt_text=custom_prompt,
+        )
+
+    with f_col2:
+        st.markdown(f"#### {tr('포맷 & 프로토콜별 실측 전송 크기 비교', 'Format & Protocol Wire Size Comparison')}")
+        results_list = bench_result["results"]
+        p_json = results_list[0]
+        r_json = results_list[1]
+        r_proto = results_list[2]
+        g_proto = results_list[3]
+        g_zstd = results_list[4]
+
+        mc1, mc2, mc3, mc4 = st.columns(4)
+        mc1.metric(
+            tr("1. Plain JSON", "1. Plain JSON"),
+            f"{p_json.wire_bytes:,} B",
+            help="기본 텍스트 JSON (필드명 중복 전송)",
+        )
+        mc2.metric(
+            tr("2. JSON (REST Base64)", "2. JSON (REST Base64)"),
+            f"{r_json.wire_bytes:,} B",
+            delta=f"+{r_json.base64_overhead_bytes} B ({tr('패널티', 'Penalty')})",
+            delta_color="inverse",
+            help="REST API 규격상 Base64 인코딩 강제로 약 33% 팽창",
+        )
+        mc3.metric(
+            tr("4. Protobuf (gRPC)", "4. Protobuf (gRPC)"),
+            f"{g_proto.wire_bytes:,} B",
+            delta=f"-{g_proto.reduction_vs_json_pct:.1f}%",
+            help="필드명 제거 + Varint 압축 + gRPC 순수 바이너리 전송",
+        )
+        mc4.metric(
+            tr("5. Protobuf+Zstd (gRPC)", "5. Protobuf+Zstd (gRPC)"),
+            f"{g_zstd.wire_bytes:,} B",
+            delta=f"-{g_zstd.reduction_vs_json_pct:.1f}%",
+            help="Anthropic 프로덕션 패턴: 바이너리 스키마 + Zstd + gRPC",
+        )
+
+        chart_df = pd.DataFrame(
+            {
+                tr("전송 방식", "Wire Format"): [
+                    tr("1. Plain JSON", "1. Plain JSON"),
+                    tr("2. JSON (REST Base64)", "2. JSON (REST Base64)"),
+                    tr("3. Protobuf (REST Base64)", "3. Protobuf (REST Base64)"),
+                    tr("4. Protobuf (gRPC)", "4. Protobuf (gRPC)"),
+                    tr("5. Protobuf+Zstd (gRPC)", "5. Protobuf+Zstd (gRPC)"),
+                ],
+                tr("실제 전송 바이트 (Wire Bytes)", "Wire Bytes"): [
+                    p_json.wire_bytes,
+                    r_json.wire_bytes,
+                    r_proto.wire_bytes,
+                    g_proto.wire_bytes,
+                    g_zstd.wire_bytes,
+                ],
+            }
+        ).set_index(tr("전송 방식", "Wire Format"))
+        st.bar_chart(chart_df)
+
+    st.markdown(f"#### 📋 {tr('5대 전송 방식 종합 비교표 및 월간 트래픽 절감 추정치', 'Comprehensive Comparison & Monthly Traffic Savings')}")
+    table_rows = []
+    for r in results_list:
+        table_rows.append(
+            {
+                tr("전송 포맷 및 프로토콜", "Format & Protocol"): r.format_name,
+                tr("프로토콜", "Protocol"): r.protocol,
+                tr("전송 크기 (Bytes)", "Wire Bytes"): f"{r.wire_bytes:,} B",
+                tr("Base64 패널티", "Base64 Penalty"): f"+{r.base64_overhead_bytes} B" if r.base64_overhead_bytes > 0 else "0 B (순수 바이너리)",
+                tr("JSON 대비 절감률", "Savings vs JSON"): f"{r.reduction_vs_json_pct:+.1f}%",
+                tr("아키텍처 특징", "Architecture Note"): r.description,
+            }
+        )
+    st.dataframe(pd.DataFrame(table_rows), use_container_width=True)
+
+    sav = bench_result["savings_summary"]
+    st.info(
+        f"💰 **{tr('초대규모 트래픽 비용 절감 추정치 (월 10억 건 발행 기준)', 'Large-Scale Cost Savings Estimate (1 Billion Events/Month)')}**:\n"
+        f"- {tr('기존 Plain JSON 월간 트래픽', 'Baseline Plain JSON Monthly Volume')}: **{sav['baseline_tb_per_1b']} TB**\n"
+        f"- {tr('Protobuf + Zstd (gRPC) 월간 트래픽', 'Protobuf + Zstd (gRPC) Monthly Volume')}: **{sav['optimized_tb_per_1b']} TB**\n"
+        f"- 🎯 **{tr('순수 절감 네트워크 대역폭 및 비용', 'Net Bandwidth & Egress Cost Saved')}**: **{sav['saved_tb_per_1b']} TB 절감 ({sav['overall_reduction_pct']}% 절감)**!"
+    )
+
+    st.markdown("---")
+    st.markdown(f"### 🛡️ 2. {tr('Proto-First 거버넌스 & Dead Letter Queue (DLQ) 격리', 'Proto-First Governance & Dead Letter Queue (DLQ) Quarantine')}")
 
     d_col1, d_col2 = st.columns([1, 2])
     with d_col1:

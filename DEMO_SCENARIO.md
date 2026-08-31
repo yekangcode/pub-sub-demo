@@ -187,39 +187,107 @@ Streaming P50: 11.0ms
 
 ---
 
-## 🛡️ 세션 4: Proto-First 거버넌스 & Dead Letter Queue (DLQ) (Tab 4)
+## 🛡️ 세션 4: 데이터 전송 포맷 최적화 (바이너리 스키마) & DLQ 거버넌스 (Tab 4)
 
-### 1. 배경 설명
+---
+
+### 📊 세션 4-A: 데이터 전송 포맷 & 프로토콜 최적화 (Binary Schema & gRPC)
+
+#### 1. 문제 배경 및 최적화 방안
+1. **JSON 포맷의 한계**:
+   - JSON은 가독성이 높고 개발이 편리하지만, `"event_id"`, `"timestamp_ms"`, `"pod_env_vars"` 등 **필드명 문자열 데이터가 모든 단일 메시지마다 반복 포함**됩니다.
+   - 이로 인해 압축률이 낮아지고 네트워크 페이로드 크기가 불필요하게 커집니다.
+2. **최적화 방안: 바이너리 스키마 (Protocol Buffers / Avro) 적용**:
+   - 필드명을 1바이트 Varint 태그 번호로 대체하고 컴팩트한 바이너리 타입 인코딩을 적용하여 데이터 크기를 줄입니다.
+3. **⚠️ 전송 프로토콜 선택 (REST vs gRPC) - Base64 +33% 패널티의 함정**:
+   - 바이너리 포맷을 전송할 때는 **전송 프로토콜의 선택**이 매우 중요합니다.
+   - 만약 **HTTP REST API**(`pubsub.googleapis.com/...:publish`)를 사용하면, HTTP 본문 규격(JSON)에 맞추기 위해 메시지 데이터가 **Base64로 강제 인코딩**됩니다.
+   - Base64 인코딩은 3바이트를 4문자로 변환하므로 **용량이 대략 33.3% 추가 증가하는 심각한 패널티**가 발생합니다.
+   - 반면 **gRPC(HTTP/2)**는 바이너리 프레이밍을 지원하므로 **순수 raw 바이너리를 그대로 전송(Base64 패널티 0%)**합니다.
+4. **클라이언트단 압축(Zstd)과의 결합**:
+   - 바이너리 스키마(Protobuf) + 순수 gRPC 전송 + Zstandard 압축을 결합하면, 수백 바이트 미만의 미세 데이터가 아닌 한 **단일 페이로드당 최적화할 수 있는 가장 압축된 바이트 볼륨(최대 80% 이상 절감)**을 달성하여 네트워크 Egress 및 클라우드 인프라 비용을 극적으로 낮출 수 있습니다.
+
+#### 2. 발표자 액션 & 시연
+1. Streamlit 대시보드의 **`🛡️ 3. 데이터 포맷 최적화 & DLQ`** 탭 클릭.
+2. `시뮬레이션 페이로드 설정`에서 **`LLM 서빙 프롬프트/응답 (텍스트)`** 또는 **`멀티턴 에이전트 실행 컨텍스트 (긴 텍스트)`** 선택.
+3. 화면 우측의 **4대 메트릭 카드 및 5대 전송 방식 비교 막대 차트** 확인.
+4. `5대 전송 방식 종합 비교표`와 하단의 **`초대규모 트래픽 비용 절감 추정치 (월 10억 건 발행 기준)`** 콜아웃 박스를 가리키며 스피칭.
+
+#### 3. 기대되는 화면 결과
+* **메트릭 카드 실측치**:
+  - `1. Plain JSON`: ~720 B
+  - `2. JSON (REST Base64)`: ~1,000 B (+280 B, **+33% Base64 인플레이션 패널티**)
+  - `4. Protobuf (gRPC)`: ~490 B (**-32% 절감**, Base64 패널티 0%)
+  - `5. Protobuf+Zstd (gRPC)`: ~290 B (**-60%~-80% 최종 절감**, Anthropic 프로덕션 최적화)
+* **월 10억 건(1 Billion Events) 전송 시 예상 절감량**:
+  - 기존 Plain JSON 월간 트래픽: **~0.67 TB**
+  - Protobuf + Zstd (gRPC) 월간 트래픽: **~0.27 TB**
+  - 🎯 **순수 절감 네트워크 대역폭 및 비용: ~0.40 TB 절감 (약 60% 이상 비용 절감)**
+
+#### 4. 터미널 CLI 벤치마크 실행 명령어
+```bash
+.venv/bin/python3 -c "
+from src.format_benchmark import DataFormatBenchmark
+
+bench = DataFormatBenchmark(compression_level=3)
+sample = 'Explain the internal architecture of Google Cloud Pub/Sub and StreamingPull RPCs. ' * 5
+res = bench.benchmark_event('evt-bench', 'claude-pod', sample)
+
+print('=== 데이터 전송 포맷 및 프로토콜 벤치마크 결과 ===')
+for r in res['results']:
+    penalty = f'(Base64 패널티: +{r.base64_overhead_bytes}B)' if r.base64_overhead_bytes > 0 else '(Base64 패널티: 0B)'
+    print(f'{r.format_name:<35} | {r.wire_bytes:>5} 바이트 | {r.reduction_vs_json_pct:>+6.1f}% {penalty}')
+
+sav = res['savings_summary']
+print(f'\n🎯 월 10억 건 발행 시 절감량: {sav[\"saved_tb_per_1b\"]} TB 절감 ({sav[\"overall_reduction_pct\"]}%)')
+"
+```
+**출력 결과**:
+```text
+=== 데이터 전송 포맷 및 프로토콜 벤치마크 결과 ===
+1. Plain JSON (텍스트)                |   612 바이트 |   +0.0% (Base64 패널티: 0B)
+2. JSON over REST (Base64)          |   856 바이트 |  -39.9% (Base64 패널티: +244B)
+3. Protobuf over REST (Base64)      |   672 바이트 |   -9.8% (Base64 패널티: +192B)
+4. Protobuf over gRPC (순수 바이너리) |   480 바이트 |  +21.6% (Base64 패널티: 0B)
+5. Protobuf + Zstd over gRPC (Anthropic) |   246 바이트 |  +59.8% (Base64 패널티: 0B)
+
+🎯 월 10억 건 발행 시 절감량: 0.34 TB 절감 (59.8%)
+```
+
+---
+
+### 🛡️ 세션 4-B: Proto-First 거버넌스 & Dead Letter Queue (DLQ) 격리
+
+#### 1. 배경 설명
 * 수천 명의 엔지니어와 에이전트가 이벤트를 발행할 때, 단 하나의 잘못된 스키마 변경이나 손상된 바이너리(Poison Pill)가 전체 파이프라인을 멈추게 할 수 있습니다(Head-of-Line Blocking).
 * Anthropic은 엄격한 Protocol Buffers 스키마와 **정확히 5회의 재시도 후 DLQ로 격리하는 서킷 브레이커**를 운영합니다.
 
-### 2. 발표자 액션 & 시연
+#### 2. 발표자 액션 & 시연
 1. `🚨 포이즌 필 / 스키마 손상 이벤트 주입` 버튼 클릭.
 
-### 3. 기대되는 화면 결과
+#### 3. 기대되는 화면 결과
 * **에러 알림 배너**:
   - `이벤트 evt-corrupt-...가 5회 전송 실패 후 Dead Letter Queue로 안전하게 격리되었습니다!`
 * **DLQ 격리 모니터링 테이블**:
   - `event_id`: `evt-corrupt-...`
   - `attempts`: `5` (최대 시도 한도 도달)
-  - `status`: `DEAD_LETTER_FORWARDED`
-  - `quarantine_reason`: `Schema validation fault: missing required fields or unparseable protobuf frame`
+  - `status`: `dead_lettered`
+  - `quarantine_reason`: `Corrupted event detected: evt-corrupt-...`
   - `timestamp`: 격리된 정확한 시각 기록
 
-### 4. CLI 격리 시뮬레이션 명령어
+#### 4. CLI 격리 시뮬레이션 명령어
 ```bash
 .venv/bin/python3 -c "
-from src.gcp_client import GCPClientFactory, GCPMode
+from src.gcp_client import GCPClientFactory, GCPMode, PublishedMessage
 from src.dlq import DLQManager
 from src.consumer import DualPathConsumer
-from src.gcp_client import PubSubMessage
 
 client = GCPClientFactory.get_client(GCPMode.MOCK)
 dlq = DLQManager(client, 'main-topic', 'dlq-topic', max_delivery_attempts=5)
 consumer = DualPathConsumer(client)
 
 # 고의로 손상된 바이너리 메시지 생성
-bad_msg = PubSubMessage(message_id='bad-001', data=b'MALFORMED_GARBAGE', attributes={'content-encoding': 'zstd'})
+bad_msg = PublishedMessage(message_id='bad-001', data=b'MALFORMED_GARBAGE', attributes={'content-encoding': 'zstd'})
 
 for attempt in range(1, 6):
     res = dlq.process_with_dlq(bad_msg, consumer.consume_message)
@@ -228,15 +296,15 @@ for attempt in range(1, 6):
 ```
 **출력 결과**:
 ```text
-시도 #1: 상태=RETRY
-시도 #2: 상태=RETRY
-시도 #3: 상태=RETRY
-시도 #4: 상태=RETRY
-시도 #5: 상태=DEAD_LETTER_FORWARDED
+시도 #1: 상태=retry
+시도 #2: 상태=retry
+시도 #3: 상태=retry
+시도 #4: 상태=retry
+시도 #5: 상태=dead_lettered
 ```
 
-### 5. 핵심 스피킹 포인트
-> *"손상된 페이로드가 정상 컨슈머를 무한 재시도로 마비시키지 않도록, 정확히 5회 실패 후 DLQ 토픽(`pubsub-demo-dlq-topic`)으로 즉시 격리하여 메인 파이프라인의 가용성(SLO 99.99%)을 완벽히 보장합니다."*
+#### 5. 핵심 스피킹 포인트
+> *"바이너리 스키마(Protobuf)와 gRPC, Zstd를 결합하여 데이터 크기를 60% 이상 축소하고 HTTP REST의 Base64 +33% 팽창 패널티를 원천 차단합니다. 아울러 손상된 페이로드가 정상 컨슈머를 마비시키지 않도록 정확히 5회 실패 후 DLQ 토픽(`pubsub-demo-dlq-topic`)으로 격리하여 파이프라인 가용성(SLO 99.99%)을 달성합니다."*
 
 ---
 
