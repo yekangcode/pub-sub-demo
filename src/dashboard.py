@@ -1115,22 +1115,22 @@ message StreamingEvent {
     watchout_df = pd.DataFrame(
         {
             tr("항목", "Item"): [
-                tr("비동기 Future 처리", "Async Future Handling"),
+                tr("10MB 한도 오버헤드 주의 (RequestByteThreshold)", "10MB Limit Overhead Warning (RequestByteThreshold)"),
                 tr("Graceful Shutdown", "Graceful Shutdown"),
-                tr("Ordering Key 사용 시", "Ordering Key Usage"),
+                tr("Ordering Key 사용 시 주의점", "Ordering Key Usage Watch-out"),
             ],
             tr("점검 포인트 및 권장 조치", "Checkpoints & Recommended Actions"): [
                 tr(
-                    "publish() 호출 시 즉시 전송되지 않고 Future를 반환하므로, 반드시 콜백(Callback)을 등록하여 전송 실패/에러를 핸들링해야 합니다.",
-                    "publish() returns a Future immediately; you must register callbacks to handle transmission failures/errors.",
+                    "Pub/Sub 서버의 물리 한도는 10,000,000 바이트입니다. 바이트 임계치를 정확히 10MB로 설정하면 gRPC 프레임/메타데이터 오버헤드로 인해 간헐적으로 INVALID_ARGUMENT 오류가 발생할 수 있습니다. 반드시 마진을 두어야 합니다.",
+                    "Pub/Sub server physical limit is 10,000,000 bytes. Setting the threshold to exactly 10MB can trigger intermittent INVALID_ARGUMENT errors due to gRPC frame/metadata overhead. Leaving a safety margin is required.",
                 ),
                 tr(
                     "애플리케이션 종료 시 Publisher 클라이언트를 반드시 shutdown() 또는 버퍼 플러시(awaitTermination)하여 메모리에 남아있는 배치가 유실되지 않도록 해야 합니다.",
                     "On application exit, ensure publisher.shutdown() or buffer flushing (awaitTermination) is invoked to prevent dropping queued messages.",
                 ),
                 tr(
-                    "메시지 순서 보장(OrderingKey)을 활성화한 경우, 특정 키에 장애가 발생하면 해당 키의 후속 배치가 블로킹되므로 재시도 정책과 에러 핸들링을 별도로 분리해야 합니다.",
-                    "When OrderingKey is enabled, a failure on a specific key blocks all subsequent batches for that key; separate retry policies and resume_publish handling are essential.",
+                    "enable_message_ordering = true 설정 시 동일한 Ordering Key를 가진 메시지는 순서대로 발행됩니다. 단, 앞선 배치가 실패하면 동일 키의 후속 메시지가 블록되므로 실패 처리에 주의해야 합니다.",
+                    "When enable_message_ordering = true, messages with the same Ordering Key are published in order. However, if a preceding batch fails, subsequent messages with the same key are blocked, requiring careful error handling.",
                 ),
             ],
         }
